@@ -1,3 +1,5 @@
 tex/*
 !tex/*.tex
 !tex/Makefile
+
+modules/*
