@@ -2,8 +2,8 @@ import serial, time
 from struct import *
 import numpy as np
 
-# dataPort = serial.Serial('/dev/ttyACM1', 921600, timeout=0.2)
-# controlPort = serial.Serial('/dev/ttyACM0', 115200, timeout=0.2)
+dataPort = serial.Serial('/dev/ttyACM1', 921600, timeout=0.2)
+controlPort = serial.Serial('/dev/ttyACM0', 115200, timeout=0.2)
 config = open("./mmw_pplcount_demo_default.cfg", "r")
 dataFile = open("./data.out", "rb")
 
@@ -15,40 +15,54 @@ def lengthFromStruct(S):
     return length
 
 
+# def validateChecksum1(header):
+#     print(header)
+#     h = np.array(header, np.uint8).view(np.uint16)
+#     print(h)
+#     a = [np.uint32(np.sum(h))]
+#     print(a)
+#     b = np.array(a, np.uint32).astype(np.uint16)
+#     b = np.uint16(np.sum(b))
+#     print(b)
+#
+#     rr = np.invert(b)
+#     print(rr)
+#     return rr
+
 def validateChecksum(header):
     h = np.array(header, np.uint8).view(np.uint16)
-    a = [np.uint32(np.sum(h))]
-    print(a)
-    b = np.array(a, np.uint16).astype(np.uint8)
-    b = np.uint16(np.sum(b))
-    print(b)
+    a = np.uint32(np.sum(h))
 
-    rr = np.invert(b)
-    print(rr)
+    b = np.array(a, np.uint32)
+
+    dt = np.dtype([('f1', np.uint16), ('f2', np.uint16)])
+    b = b.view(dtype=dt)
+
+    c = b['f1'] + b['f2']
+    rr = np.invert(c)
     return rr
 
-
 def sendData(data):
-    # data += "\n"
-    # controlPort.write(data.encode())
+    data += "\n"
+    controlPort.write(data.encode())
     time.sleep(1)
-    # echo = controlPort.readline()
+    echo = controlPort.readline()
     time.sleep(1)
-    # done = controlPort.readline()
+    done = controlPort.readline()
     time.sleep(1)
-    # prompt = controlPort.readline()
+    prompt = controlPort.readline()
     time.sleep(1)
-    # print(echo)
-    # print(done)
-    # print(prompt)
+    print(echo)
+    print(done)
+    print(prompt)
 
 
 for line in config:
     if line[0] == '%':
         continue
-    # line = line.strip()
-    # print(line)
-    # sendData(line)
+    line = line.strip()
+    print(line)
+    #sendData(line)
 
 frameHeaderStructType = np.zeros(1, dtype=[('sync', np.uint64, 8),
                                            ('version', np.uint32, 4),
@@ -115,6 +129,8 @@ while True:
 
         if gotHeader == 0:
             rxHeader = np.fromfile(dataFile, np.uint8, frameHeaderLengthInBytes)
+            #rxHeader = dataPort.read(frameHeaderLengthInBytes)
+            #rxHeader = np.frombuffer(rxHeader, dtype=np.uint8)
             byteCount = rxHeader.size * rxHeader.itemsize
             print('HLAVICKA')
             print(rxHeader)
@@ -140,6 +156,7 @@ while True:
             break
 
         print('CONITNUE')
+        #exit()
         offset = 0
         frameHeaderStructType['sync'] = np.array(rxHeader[offset:offset + frameHeaderStructType['sync'].itemsize],
                                                  np.uint8)
@@ -188,7 +205,8 @@ while True:
         print(frameHeaderLengthInBytes)
 
         if gotHeader == 1:
-            if frameHeaderStructType['frameNumber'] > targetFrameNum:
+            print(frameHeaderStructType['frameNumber'].astype(np.uint8).view(np.uint32))
+            if frameHeaderStructType['frameNumber'].astype(np.uint8).view(np.uint32) > targetFrameNum:
                 targetFrameNum = frameHeaderStructType['frameNumber']
                 gotHeader = 0
             else:
@@ -213,21 +231,24 @@ while True:
             offset = 0
 
             for nTlv in range(frameHeaderStructType['numTLVs'].astype(np.uint8).view(np.uint16).__int__()):
-                tlvType = np.array(rxData[offset + 0:offset + 4], np.uint32)
-                tlvLength = np.array(rxData[offset + 4:offset + 8], np.uint32)
-
+                tlvType = np.array(rxData[offset + 0:offset + 4], np.uint8).view(np.uint32)
+                tlvLength = np.array(rxData[offset + 4:offset + 8], np.uint8).view(np.uint32)
+                print(tlvLength)
                 if tlvLength + offset > dataLength:
                     lostSync = 1
                     break
 
                 offset += tlvHeaderLengthInBytes
 
-                valueLength = tlvLength.astype(np.uint8).view(np.uint32).__int__() - tlvHeaderLengthInBytes
-                if tlvType.astype(np.uint8).view(np.uint32).__int__() == 6:
+                valueLength = tlvLength.__int__() - tlvHeaderLengthInBytes
+                print(tlvHeaderLengthInBytes)
+                if tlvType.__int__() == 6:
                     numInputPoints = valueLength / pointLengthInBytes
-
+                    print(valueLength)
+                    print(pointLengthInBytes)
                     if numInputPoints > 0:
                         p = np.array(rxData[offset: offset + valueLength], np.uint8).view(np.single)
+                        print(p)
                         pointCloud = p.reshape(4, numInputPoints.__int__())
                         pointCloud[1, :] = pointCloud[1, :] * np.pi / 180
 
@@ -264,7 +285,6 @@ while True:
                 break
 
         if n == 7:
-            print('here')
             lostSync = 0
 
             frameNum = frameNum + 1
@@ -276,11 +296,8 @@ while True:
             byteCount = header.size * header.itemsize
             header = header.tolist()
             rxHeader = np.array([np.transpose(syncPatternUINT8)]).tolist()[0]
-            print(rxHeader)
-            print(header)
             rxHeader += header
 
-            print(rxHeader)
             byteCount = byteCount + 8
             gotHeader = 1
 
