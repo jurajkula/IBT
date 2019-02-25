@@ -2,10 +2,19 @@ import serial, time
 from struct import *
 import numpy as np
 
-dataPort = serial.Serial('/dev/ttyACM1', 921600, timeout=0.2)
-controlPort = serial.Serial('/dev/ttyACM0', 115200, timeout=0.2)
-config = open("./mmw_pplcount_demo_default.cfg", "r")
-dataFile = open("./data.out", "rb")
+isRadar = False
+dataPort = 0
+controlPort = 0
+config = 0
+dataFile = 0
+
+
+if isRadar:
+    dataPort = serial.Serial('/dev/ttyACM1', 921600, timeout=0.2)
+    controlPort = serial.Serial('/dev/ttyACM0', 115200, timeout=0.2)
+else:
+    config = open("./mmw_pplcount_demo_default.cfg", "r")
+    dataFile = open("./data.out", "rb")
 
 
 def lengthFromStruct(S):
@@ -42,6 +51,7 @@ def validateChecksum(header):
     rr = np.invert(c)
     return rr
 
+
 def sendData(data):
     data += "\n"
     controlPort.write(data.encode())
@@ -57,12 +67,13 @@ def sendData(data):
     print(prompt)
 
 
-for line in config:
-    if line[0] == '%':
-        continue
-    line = line.strip()
-    print(line)
-    #sendData(line)
+if isRadar:
+    for line in config:
+        if line[0] == '%':
+            continue
+        line = line.strip()
+        print(line)
+        sendData(line)
 
 frameHeaderStructType = np.zeros(1, dtype=[('sync', np.uint64, 8),
                                            ('version', np.uint32, 4),
@@ -120,6 +131,7 @@ rxHeader = 0
 byteCount = 0
 targetFrameNum = 0
 frameNum = 0
+rxData = np.zeros((10000, 1), np.uint8)
 
 while True:
     while lostSync == 0:
@@ -129,8 +141,8 @@ while True:
 
         if gotHeader == 0:
             rxHeader = np.fromfile(dataFile, np.uint8, frameHeaderLengthInBytes)
-            #rxHeader = dataPort.read(frameHeaderLengthInBytes)
-            #rxHeader = np.frombuffer(rxHeader, dtype=np.uint8)
+            # rxHeader = dataPort.read(frameHeaderLengthInBytes)
+            # rxHeader = np.frombuffer(rxHeader, dtype=np.uint8)
             byteCount = rxHeader.size * rxHeader.itemsize
             print('HLAVICKA')
             print(rxHeader)
@@ -156,7 +168,7 @@ while True:
             break
 
         print('CONITNUE')
-        #exit()
+        # exit()
         offset = 0
         frameHeaderStructType['sync'] = np.array(rxHeader[offset:offset + frameHeaderStructType['sync'].itemsize],
                                                  np.uint8)
@@ -207,14 +219,14 @@ while True:
         if gotHeader == 1:
             print(frameHeaderStructType['frameNumber'].astype(np.uint8).view(np.uint32))
             if frameHeaderStructType['frameNumber'].astype(np.uint8).view(np.uint32) > targetFrameNum:
-                targetFrameNum = frameHeaderStructType['frameNumber']
+                targetFrameNum = frameHeaderStructType['frameNumber'].astype(np.uint8).view(np.uint32)
                 gotHeader = 0
             else:
                 gotHeader = 0
                 lostSync = 1
                 break
 
-        targetFrameNum = frameHeaderStructType['frameNumber']
+        targetFrameNum = frameHeaderStructType['frameNumber'].astype(np.uint8).view(np.uint32)
 
         dataLength = frameHeaderStructType['packetLength'].astype(np.uint8).view(
             np.uint32).__int__() - frameHeaderLengthInBytes
@@ -249,7 +261,9 @@ while True:
                     if numInputPoints > 0:
                         p = np.array(rxData[offset: offset + valueLength], np.uint8).view(np.single)
                         print(p)
-                        pointCloud = p.reshape(4, numInputPoints.__int__())
+                        ppp = int(p.size / 4)
+                        # TODO ppp prepracovanie
+                        pointCloud = p.reshape(4, ppp)
                         pointCloud[1, :] = pointCloud[1, :] * np.pi / 180
 
                         posAll = [np.dot(pointCloud[0, :], np.sin(pointCloud[1, :])),
@@ -264,6 +278,44 @@ while True:
 
                         clutterPoints = pointCloud[0:1, staticInd]
                         pointCloud = pointCloud[0:2, ~clutterInd]
+
+                        numOutputPoints = np.size(pointCloud, 1)
+
+                    offset += valueLength
+
+                if tlvType.__int__() == 7:
+                    numTargets = int(valueLength / targetLengthInBytes)
+                    TID = np.zeros((1, numTargets))[0]
+                    S = np.zeros((6, numTargets))
+                    EC = np.zeros((9, numTargets))
+                    G = np.zeros((1, numTargets))[0]
+
+                    for n in range(0, numTargets):
+                        TID[n] = np.array(rxData[offset: offset + 4], np.uint8).view(np.uint32)
+                        S[:, n] = np.array(rxData[offset + 4: offset + 28], np.uint8).view(np.single)
+                        EC[:, n] = np.array(rxData[offset + 28: offset + 64], np.uint8).view(np.single)
+                        G[n] = np.array(rxData[offset + 64: offset + 68], np.uint8).view(np.single)
+                        offset += 68
+
+                if tlvType.__int__() == 8:
+                    numIndices = int(valueLength / indexLengthInBytes)
+                    mIndex = np.array(rxData[offset: offset + numIndices], np.uint8).view(np.uint8)
+                    offset += valueLength
+
+        if numInputPoints == 0:
+            numOutputPoints = 0
+            pointCloud = np.single(np.zeros((4, 0)))
+            posAll = []
+            posInRange = []
+
+        if numTargets == 0:
+            TID = []
+            S = []
+            EC = []
+            G = []
+
+
+
         # line = dataPort.read(65536)
         # dataFile.write(line)
         ##print(line)
@@ -271,7 +323,7 @@ while True:
         # count -= 1
         break
 
-    if targetFrameNum:
+        # if targetFrameNum:
         lostSyncTime = time.time()
 
     while lostSync:
