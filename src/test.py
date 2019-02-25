@@ -144,10 +144,10 @@ while True:
             # rxHeader = dataPort.read(frameHeaderLengthInBytes)
             # rxHeader = np.frombuffer(rxHeader, dtype=np.uint8)
             byteCount = rxHeader.size * rxHeader.itemsize
-            print('HLAVICKA')
-            print(rxHeader)
-            print(byteCount)
-            print('END')
+            #print('HLAVICKA')
+            #print(rxHeader)
+            #print(byteCount)
+            #print('END')
 
         start = (time.time() - frameStart) * 1000
 
@@ -155,7 +155,7 @@ while True:
         magicBytes = magicBytes.view(np.uint64)
 
         if magicBytes != syncPatternUINT64:
-            print('REMOVE\n')
+            #print('REMOVE\n')
             lostSync = 1
             break
 
@@ -167,7 +167,7 @@ while True:
             lostSync = 1
             break
 
-        print('CONITNUE')
+        #print('CONITNUE')
         # exit()
         offset = 0
         frameHeaderStructType['sync'] = np.array(rxHeader[offset:offset + frameHeaderStructType['sync'].itemsize],
@@ -210,14 +210,14 @@ while True:
             rxHeader[offset:offset + frameHeaderStructType['checksum'].itemsize], np.uint8)
         offset += frameHeaderStructType['checksum'].itemsize
 
-        print(frameHeaderStructType['numTLVs'].astype(np.uint8).view(np.uint16))
-        print(frameHeaderStructType['version'].astype(np.uint8).view(np.uint32))
-        print(frameHeaderStructType['packetLength'].astype(np.uint8).view(np.uint32))
-        print(frameHeaderStructType.view())
-        print(frameHeaderLengthInBytes)
+        #print(frameHeaderStructType['numTLVs'].astype(np.uint8).view(np.uint16))
+        #print(frameHeaderStructType['version'].astype(np.uint8).view(np.uint32))
+        #print(frameHeaderStructType['packetLength'].astype(np.uint8).view(np.uint32))
+        #print(frameHeaderStructType.view())
+        #print(frameHeaderLengthInBytes)
 
         if gotHeader == 1:
-            print(frameHeaderStructType['frameNumber'].astype(np.uint8).view(np.uint32))
+            #print(frameHeaderStructType['frameNumber'].astype(np.uint8).view(np.uint32))
             if frameHeaderStructType['frameNumber'].astype(np.uint8).view(np.uint32) > targetFrameNum:
                 targetFrameNum = frameHeaderStructType['frameNumber'].astype(np.uint8).view(np.uint32)
                 gotHeader = 0
@@ -234,8 +234,8 @@ while True:
         if dataLength > 0:
             rxData = np.fromfile(dataFile, np.uint8, dataLength)
             byteCount = rxData.size * rxData.itemsize
-            print(rxData.size)
-            print(dataLength)
+            #print(rxData.size)
+            #print(dataLength)
             if byteCount != float(dataLength):
                 lostSync = 1
                 break
@@ -245,7 +245,7 @@ while True:
             for nTlv in range(frameHeaderStructType['numTLVs'].astype(np.uint8).view(np.uint16).__int__()):
                 tlvType = np.array(rxData[offset + 0:offset + 4], np.uint8).view(np.uint32)
                 tlvLength = np.array(rxData[offset + 4:offset + 8], np.uint8).view(np.uint32)
-                print(tlvLength)
+                #print(tlvLength)
                 if tlvLength + offset > dataLength:
                     lostSync = 1
                     break
@@ -253,14 +253,14 @@ while True:
                 offset += tlvHeaderLengthInBytes
 
                 valueLength = tlvLength.__int__() - tlvHeaderLengthInBytes
-                print(tlvHeaderLengthInBytes)
+                #print(tlvHeaderLengthInBytes)
                 if tlvType.__int__() == 6:
                     numInputPoints = valueLength / pointLengthInBytes
-                    print(valueLength)
-                    print(pointLengthInBytes)
+                    #print(valueLength)
+                    #print(pointLengthInBytes)
                     if numInputPoints > 0:
                         p = np.array(rxData[offset: offset + valueLength], np.uint8).view(np.single)
-                        print(p)
+                        #print(p)
                         ppp = int(p.size / 4)
                         # TODO ppp prepracovanie
                         pointCloud = p.reshape(4, ppp)
@@ -278,7 +278,7 @@ while True:
 
                         clutterPoints = pointCloud[0:1, staticInd]
                         pointCloud = pointCloud[0:2, ~clutterInd]
-
+                        #print(pointCloud[0][0])
                         numOutputPoints = np.size(pointCloud, 1)
 
                     offset += valueLength
