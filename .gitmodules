@@ -1,0 +1,3 @@
+[submodule "tex"]
+	path = tex
+	url = git@github.com:jurajkula/IBT-tex.git

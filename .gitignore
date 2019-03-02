@@ -5,3 +5,4 @@ tex/*
 modules/*
 
 .idea/
+src/Radar/__pycache__
