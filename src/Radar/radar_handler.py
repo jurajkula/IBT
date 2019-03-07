@@ -272,10 +272,13 @@ class RadarHandler:
                                 ppp = int(p.size / 4)
                                 # TODO ppp prepracovanie
                                 pointCloud = p.reshape(4, ppp)
-                                pointCloud[1, :] = pointCloud[1, :] * np.pi / 180
 
-                                posAll = [np.dot(pointCloud[0, :], np.sin(pointCloud[1, :])),
-                                          np.dot(pointCloud[0, :], np.cos(pointCloud[1, :]))]
+                                # Convert degrees to radians
+                                pointCloud[1, :] = pointCloud[1, :] * np.pi / 180
+                                # posAll = [np.dot(pointCloud[0, :], np.sin(pointCloud[1, :])),
+                                #           np.dot(pointCloud[0, :], np.cos(pointCloud[1, :]))]
+                                posAll = [pointCloud[0, :] * np.sin(pointCloud[1, :]),
+                                          pointCloud[0, :] * np.cos(pointCloud[1, :])]
                                 snrAll = pointCloud[3, :]
 
                                 # remove out of range, todo
@@ -322,10 +325,17 @@ class RadarHandler:
                     EC = []
                     G = []
 
-                pyplot.axis([0, 20, 0, 100])
+                pyplot.clf()
+                pyplot.axis([0, 4, 0, 10])
                 print(posAll)
                 print(snrAll)
-                pyplot.scatter(posAll[0], posAll[1])
+
+                if snrAll.all() * 10 > 0:
+                    pyplot.scatter(posAll[0], posAll[1])
+                else:
+                    self.lostSync = 1
+                    break;
+
                 pyplot.pause(0.05)
                 pyplot.draw()
 
