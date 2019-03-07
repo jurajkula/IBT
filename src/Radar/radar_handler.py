@@ -55,7 +55,6 @@ syncPatternUINT8 = [int('0102', 16), int('0304', 16), int('0506', 16), int('0708
 syncPatternUINT8 = np.array(syncPatternUINT8, np.uint16).view(np.uint8)
 
 
-
 class RadarHandler:
     configFile: io.TextIOWrapper
     controlPort: serial.Serial
@@ -83,6 +82,7 @@ class RadarHandler:
         self.targetFrameNum = 0
         self.frameNum = 0
         self.rxData = np.zeros((10000, 1), np.uint8)
+        self.offset = 0
 
     def set_ports(self):
         reconnect = self.defaultRepeating
@@ -174,6 +174,23 @@ class RadarHandler:
         rr = np.invert(c)
         return rr
 
+    def getData(self, dataType, length):
+        if self.ports_connected():
+            data = self.dataPort.read(length)
+            data = np.frombuffer(data, dtype=dataType)
+        else:
+            data = np.fromfile(self.dataFile, dataType, length)
+        return data
+
+    def initFrameHeaderStruct(self):
+        offset = 0
+        for i in frameHeaderStructType:
+            for j in range(len(i)):
+                i[j] = np.array(self.rxHeader[offset:offset + i[j].itemsize], np.uint8)
+                offset += i[j].itemsize
+
+        return offset
+
     def run(self):
         while True:
             while self.lostSync == 0:
@@ -182,9 +199,7 @@ class RadarHandler:
                 # packetLength = dataPort.in_waiting
 
                 if self.gotHeader == 0:
-                    self.rxHeader = np.fromfile(self.dataFile, np.uint8, self.frameHeaderLengthInBytes)
-                    # rxHeader = dataPort.read(frameHeaderLengthInBytes)
-                    # rxHeader = np.frombuffer(rxHeader, dtype=np.uint8)
+                    self.rxHeader = self.getData(np.uint8, self.frameHeaderLengthInBytes)
                     self.byteCount = self.rxHeader.size * self.rxHeader.itemsize
 
                 start = (time.time() - frameStart) * 1000
@@ -207,49 +222,7 @@ class RadarHandler:
 
                 # print('CONITNUE')
                 # exit()
-                offset = 0
-                frameHeaderStructType['sync'] = np.array(
-                    self.rxHeader[offset:offset + frameHeaderStructType['sync'].itemsize],
-                    np.uint8)
-                offset += frameHeaderStructType['sync'].itemsize
-                frameHeaderStructType['version'] = np.array(
-                    self.rxHeader[offset:offset + frameHeaderStructType['version'].itemsize],
-                    np.uint8)
-                offset += frameHeaderStructType['version'].itemsize
-                frameHeaderStructType['platform'] = np.array(
-                    self.rxHeader[offset:offset + frameHeaderStructType['platform'].itemsize], np.uint8)
-                offset += frameHeaderStructType['platform'].itemsize
-                frameHeaderStructType['timestamp'] = np.array(
-                    self.rxHeader[offset:offset + frameHeaderStructType['timestamp'].itemsize], np.uint8)
-                offset += frameHeaderStructType['timestamp'].itemsize
-                frameHeaderStructType['packetLength'] = np.array(
-                    self.rxHeader[offset:offset + frameHeaderStructType['packetLength'].itemsize], np.uint8)
-                offset += frameHeaderStructType['packetLength'].itemsize
-                frameHeaderStructType['frameNumber'] = np.array(
-                    self.rxHeader[offset:offset + frameHeaderStructType['frameNumber'].itemsize], np.uint8)
-                offset += frameHeaderStructType['frameNumber'].itemsize
-                frameHeaderStructType['subframeNumber'] = np.array(
-                    self.rxHeader[offset:offset + frameHeaderStructType['subframeNumber'].itemsize], np.uint8)
-                offset += frameHeaderStructType['subframeNumber'].itemsize
-                frameHeaderStructType['chirpMargin'] = np.array(
-                    self.rxHeader[offset:offset + frameHeaderStructType['chirpMargin'].itemsize], np.uint8)
-                offset += frameHeaderStructType['chirpMargin'].itemsize
-                frameHeaderStructType['frameMargin'] = np.array(
-                    self.rxHeader[offset:offset + frameHeaderStructType['frameMargin'].itemsize], np.uint8)
-                offset += frameHeaderStructType['frameMargin'].itemsize
-                frameHeaderStructType['uartSentTime'] = np.array(
-                    self.rxHeader[offset:offset + frameHeaderStructType['uartSentTime'].itemsize], np.uint8)
-                offset += frameHeaderStructType['uartSentTime'].itemsize
-                frameHeaderStructType['trackProcessTime'] = np.array(
-                    self.rxHeader[offset:offset + frameHeaderStructType['trackProcessTime'].itemsize], np.uint8)
-                offset += frameHeaderStructType['trackProcessTime'].itemsize
-                frameHeaderStructType['numTLVs'] = np.array(
-                    self.rxHeader[offset:offset + frameHeaderStructType['numTLVs'].itemsize],
-                    np.uint8)
-                offset += frameHeaderStructType['numTLVs'].itemsize
-                frameHeaderStructType['checksum'] = np.array(
-                    self.rxHeader[offset:offset + frameHeaderStructType['checksum'].itemsize], np.uint8)
-                offset += frameHeaderStructType['checksum'].itemsize
+                self.offset = self.initFrameHeaderStruct()
 
                 if self.gotHeader == 1:
                     # print(frameHeaderStructType['frameNumber'].astype(np.uint8).view(np.uint32))
@@ -267,7 +240,7 @@ class RadarHandler:
                     np.uint32).__int__() - self.frameHeaderLengthInBytes
 
                 if dataLength > 0:
-                    self.rxData = np.fromfile(self.dataFile, np.uint8, dataLength)
+                    self.rxData = self.getData(np.uint8, dataLength)
                     self.byteCount = self.rxData.size * self.rxData.itemsize
                     # print(rxData.size)
                     # print(dataLength)
@@ -275,17 +248,17 @@ class RadarHandler:
                         self.lostSync = 1
                         break
 
-                    offset = 0
+                    self.offset = 0
 
                     for nTlv in range(frameHeaderStructType['numTLVs'].astype(np.uint8).view(np.uint16).__int__()):
-                        tlvType = np.array(self.rxData[offset + 0:offset + 4], np.uint8).view(np.uint32)
-                        tlvLength = np.array(self.rxData[offset + 4:offset + 8], np.uint8).view(np.uint32)
+                        tlvType = np.array(self.rxData[self.offset + 0:self.offset + 4], np.uint8).view(np.uint32)
+                        tlvLength = np.array(self.rxData[self.offset + 4:self.offset + 8], np.uint8).view(np.uint32)
                         # print(tlvLength)
-                        if tlvLength + offset > dataLength:
+                        if tlvLength + self.offset > dataLength:
                             self.lostSync = 1
                             break
 
-                        offset += self.tlvHeaderLengthInBytes
+                        self.offset += self.tlvHeaderLengthInBytes
 
                         valueLength = tlvLength.__int__() - self.tlvHeaderLengthInBytes
                         # print(tlvHeaderLengthInBytes)
@@ -294,7 +267,7 @@ class RadarHandler:
                             # print(valueLength)
                             # print(pointLengthInBytes)
                             if numInputPoints > 0:
-                                p = np.array(self.rxData[offset: offset + valueLength], np.uint8).view(np.single)
+                                p = np.array(self.rxData[self.offset: self.offset + valueLength], np.uint8).view(np.single)
                                 # print(p)
                                 ppp = int(p.size / 4)
                                 # TODO ppp prepracovanie
@@ -316,7 +289,7 @@ class RadarHandler:
                                 # print(pointCloud[0][0])
                                 numOutputPoints = np.size(pointCloud, 1)
 
-                            offset += valueLength
+                            self.offset += valueLength
 
                         if tlvType.__int__() == 7:
                             numTargets = int(valueLength / self.targetLengthInBytes)
@@ -326,16 +299,16 @@ class RadarHandler:
                             G = np.zeros((1, numTargets))[0]
 
                             for n in range(0, numTargets):
-                                TID[n] = np.array(self.rxData[offset: offset + 4], np.uint8).view(np.uint32)
-                                S[:, n] = np.array(self.rxData[offset + 4: offset + 28], np.uint8).view(np.single)
-                                EC[:, n] = np.array(self.rxData[offset + 28: offset + 64], np.uint8).view(np.single)
-                                G[n] = np.array(self.rxData[offset + 64: offset + 68], np.uint8).view(np.single)
-                                offset += 68
+                                TID[n] = np.array(self.rxData[self.offset: self.offset + 4], np.uint8).view(np.uint32)
+                                S[:, n] = np.array(self.rxData[self.offset + 4: self.offset + 28], np.uint8).view(np.single)
+                                EC[:, n] = np.array(self.rxData[self.offset + 28: self.offset + 64], np.uint8).view(np.single)
+                                G[n] = np.array(self.rxData[self.offset + 64: self.offset + 68], np.uint8).view(np.single)
+                                self.offset += 68
 
                         if tlvType.__int__() == 8:
                             numIndices = int(valueLength / self.indexLengthInBytes)
-                            mIndex = np.array(self.rxData[offset: offset + numIndices], np.uint8).view(np.uint8)
-                            offset += valueLength
+                            mIndex = np.array(self.rxData[self.offset: self.offset + numIndices], np.uint8).view(np.uint8)
+                            self.offset += valueLength
 
                 if numInputPoints == 0:
                     numOutputPoints = 0
@@ -370,7 +343,7 @@ class RadarHandler:
                 # print('here')
                 n = 0
                 for n in range(8):
-                    rxByte = np.fromfile(self.dataFile, np.uint8, 1)
+                    rxByte = self.getData(np.uint8, 1)
 
                     if rxByte != syncPatternUINT8[n]:
                         self.outOfSyncBytes = self.outOfSyncBytes + 1
@@ -383,7 +356,7 @@ class RadarHandler:
                     if self.frameNum > 10000:
                         self.frameNum = 1
 
-                    header = np.fromfile(self.dataFile, np.uint8, self.frameHeaderLengthInBytes - 8)
+                    header = self.getData(np.uint8, self.frameHeaderLengthInBytes - 8)
 
                     self.byteCount = header.size * header.itemsize
                     header = header.tolist()
