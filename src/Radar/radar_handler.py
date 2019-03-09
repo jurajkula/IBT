@@ -83,6 +83,8 @@ class RadarHandler:
         self.frameNum = 0
         self.rxData = np.zeros((10000, 1), np.uint8)
         self.offset = 0
+        self.numTargets = 0
+        self.numInputPoints = 0
 
     def set_ports(self):
         reconnect = self.defaultRepeating
@@ -263,10 +265,10 @@ class RadarHandler:
                         valueLength = tlvLength.__int__() - self.tlvHeaderLengthInBytes
                         # print(tlvHeaderLengthInBytes)
                         if tlvType.__int__() == 6:
-                            numInputPoints = valueLength / self.pointLengthInBytes
+                            self.numInputPoints = valueLength / self.pointLengthInBytes
                             # print(valueLength)
                             # print(pointLengthInBytes)
-                            if numInputPoints > 0:
+                            if self.numInputPoints > 0:
                                 p = np.array(self.rxData[self.offset: self.offset + valueLength], np.uint8).view(np.single)
                                 # print(p)
                                 ppp = int(p.size / 4)
@@ -295,13 +297,13 @@ class RadarHandler:
                             self.offset += valueLength
 
                         if tlvType.__int__() == 7:
-                            numTargets = int(valueLength / self.targetLengthInBytes)
-                            TID = np.zeros((1, numTargets))[0]
-                            S = np.zeros((6, numTargets))
-                            EC = np.zeros((9, numTargets))
-                            G = np.zeros((1, numTargets))[0]
+                            self.numTargets = int(valueLength / self.targetLengthInBytes)
+                            TID = np.zeros((1, self.numTargets))[0]
+                            S = np.zeros((6, self.numTargets))
+                            EC = np.zeros((9, self.numTargets))
+                            G = np.zeros((1, self.numTargets))[0]
 
-                            for n in range(0, numTargets):
+                            for n in range(0, self.numTargets):
                                 TID[n] = np.array(self.rxData[self.offset: self.offset + 4], np.uint8).view(np.uint32)
                                 S[:, n] = np.array(self.rxData[self.offset + 4: self.offset + 28], np.uint8).view(np.single)
                                 EC[:, n] = np.array(self.rxData[self.offset + 28: self.offset + 64], np.uint8).view(np.single)
@@ -313,13 +315,13 @@ class RadarHandler:
                             mIndex = np.array(self.rxData[self.offset: self.offset + numIndices], np.uint8).view(np.uint8)
                             self.offset += valueLength
 
-                if numInputPoints == 0:
+                if self.numInputPoints == 0:
                     numOutputPoints = 0
                     pointCloud = np.single(np.zeros((4, 0)))
                     posAll = []
                     posInRange = []
 
-                if numTargets == 0:
+                if self.numTargets == 0:
                     TID = []
                     S = []
                     EC = []
