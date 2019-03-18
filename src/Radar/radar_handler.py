@@ -1,4 +1,6 @@
 import io
+import math
+
 import matplotlib.pyplot as pyplot
 import numpy as np
 import serial
@@ -85,6 +87,15 @@ class RadarHandler:
         self.offset = 0
         self.numTargets = 0
         self.numInputPoints = 0
+        self.trackerRun = 'Target'
+        self.mIndex = np.zeros(1)
+        self.point3D = np.zeros(3)
+        self.numOutputPoints = 0
+        self.pointCloud = []
+        self.posAll = []
+
+        self.maxNumTracks = 20
+        self.maxNumPoints = 250
 
     def set_ports(self):
         reconnect = self.defaultRepeating
@@ -193,6 +204,30 @@ class RadarHandler:
 
         return offset
 
+    def computeH(self, s):
+        posx = s[0]
+        posy = s[1]
+        velx = s[2]
+        vely = s[3]
+        range = math.sqrt(posx * posx + posy * posy)
+        if posy == 0:
+            azimuth = math.pi / 2
+        elif posy > 0:
+            azimuth = math.atan(posx / posy)
+        else:
+            azimuth = math.atan(posx / posy) + math.pi
+        doppler = (posx * velx + posy * vely) / range
+        return np.array((range, azimuth, doppler)).transpose()
+
+    def getDim(self, G, C, A):
+        o, D, V = np.linalg.svd(A / G)
+
+        a = 1 / math.sqrt(D[0])
+        b = 1 / math.sqrt(D[1])
+        c = 1 / math.sqrt(D[2])
+
+        return max([a, b])
+
     def run(self):
         while True:
             while self.lostSync == 0:
@@ -241,6 +276,10 @@ class RadarHandler:
                 dataLength = frameHeaderStructType['packetLength'].astype(np.uint8).view(
                     np.uint32).__int__() - self.frameHeaderLengthInBytes
 
+                self.numInputPoints = 0
+                self.numTargets = 0
+                self.mIndex = np.zeros(1)
+
                 if dataLength > 0:
                     self.rxData = self.getData(np.uint8, dataLength)
                     self.byteCount = self.rxData.size * self.rxData.itemsize
@@ -269,30 +308,32 @@ class RadarHandler:
                             # print(valueLength)
                             # print(pointLengthInBytes)
                             if self.numInputPoints > 0:
-                                p = np.array(self.rxData[self.offset: self.offset + valueLength], np.uint8).view(np.single)
+                                p = np.array(self.rxData[self.offset: self.offset + valueLength], np.uint8).view(
+                                    np.single)
                                 # print(p)
                                 ppp = int(p.size / 4)
                                 # TODO ppp prepracovanie
-                                pointCloud = p.reshape(4, ppp)
+                                self.pointCloud = p.reshape(4, ppp)
 
                                 # Convert degrees to radians
-                                pointCloud[1, :] = pointCloud[1, :] * np.pi / 180
+                                self.pointCloud[1, :] = self.pointCloud[1, :] * np.pi / 180
                                 # posAll = [np.dot(pointCloud[0, :], np.sin(pointCloud[1, :])),
                                 #           np.dot(pointCloud[0, :], np.cos(pointCloud[1, :]))]
-                                posAll = [pointCloud[0, :] * np.sin(pointCloud[1, :]),
-                                          pointCloud[0, :] * np.cos(pointCloud[1, :])]
-                                snrAll = pointCloud[3, :]
+                                self.posAll = [self.pointCloud[0, :] * np.sin(self.pointCloud[1, :]),
+                                               self.pointCloud[0, :] * np.cos(self.pointCloud[1, :])]
+                                snrAll = self.pointCloud[3, :]
 
                                 # remove out of range, todo
 
-                                staticInd = (pointCloud[2, :] == 0)
-                                clutterInd = np.in1d(np.transpose(pointCloud[0:1, :]), np.transpose(self.clutterPoints))
+                                staticInd = (self.pointCloud[2, :] == 0)
+                                clutterInd = np.in1d(np.transpose(self.pointCloud[0:1, :]),
+                                                     np.transpose(self.clutterPoints))
                                 clutterInd = np.transpose(clutterInd) & staticInd
 
-                                self.clutterPoints = pointCloud[0:1, staticInd]
-                                pointCloud = pointCloud[0:2, ~clutterInd]
-                                # print(pointCloud[0][0])
-                                numOutputPoints = np.size(pointCloud, 1)
+                                self.clutterPoints = self.pointCloud[0:2, staticInd]
+                                self.pointCloud = self.pointCloud[0:3, ~clutterInd]
+                                # print(self.pointCloud)
+                                self.numOutputPoints = np.size(self.pointCloud, 1)
 
                             self.offset += valueLength
 
@@ -305,21 +346,25 @@ class RadarHandler:
 
                             for n in range(0, self.numTargets):
                                 TID[n] = np.array(self.rxData[self.offset: self.offset + 4], np.uint8).view(np.uint32)
-                                S[:, n] = np.array(self.rxData[self.offset + 4: self.offset + 28], np.uint8).view(np.single)
-                                EC[:, n] = np.array(self.rxData[self.offset + 28: self.offset + 64], np.uint8).view(np.single)
-                                G[n] = np.array(self.rxData[self.offset + 64: self.offset + 68], np.uint8).view(np.single)
+                                S[:, n] = np.array(self.rxData[self.offset + 4: self.offset + 28], np.uint8).view(
+                                    np.single)
+                                EC[:, n] = np.array(self.rxData[self.offset + 28: self.offset + 64], np.uint8).view(
+                                    np.single)
+                                G[n] = np.array(self.rxData[self.offset + 64: self.offset + 68], np.uint8).view(
+                                    np.single)
                                 self.offset += 68
 
                         if tlvType.__int__() == 8:
                             numIndices = int(valueLength / self.indexLengthInBytes)
-                            mIndex = np.array(self.rxData[self.offset: self.offset + numIndices], np.uint8).view(np.uint8)
+                            self.mIndex = np.array(self.rxData[self.offset: self.offset + numIndices], np.uint8).view(
+                                np.uint8)
                             self.offset += valueLength
 
                 if self.numInputPoints == 0:
-                    numOutputPoints = 0
-                    pointCloud = np.single(np.zeros((4, 0)))
-                    posAll = []
-                    posInRange = []
+                    self.numOutputPoints = 0
+                    self.pointCloud = np.single(np.zeros((4, 0)))
+                    self.posAll = []
+                    self.posInRange = []
 
                 if self.numTargets == 0:
                     TID = []
@@ -328,19 +373,74 @@ class RadarHandler:
                     G = []
 
                 pyplot.clf()
-                pyplot.axis([0, 4, 0, 10])
-                print(posAll)
-                print(snrAll)
+                pyplot.axis([-4, 4, 0, 10])
+                # print(self.posAll)
+                # print(snrAll)
 
-                if snrAll.all() * 10 > 0:
-                    pyplot.scatter(posAll[0], posAll[1])
-                else:
+                # if snrAll.all() * 10 > 0:
+                # pyplot.scatter(self.posAll[0], self.posAll[1])
+                # else:
+                # self.lostSync = 1
+                # break
+
+                # pyplot.pause(0.05)
+                # pyplot.draw()
+
+                if self.trackerRun == 'Target':
+                    if self.numTargets == 0:
+                        TID = np.zeros((1, 1))
+                        S = np.zeros((6, 1))
+                        EC = np.zeros((9, 1))
+                        G = np.zeros((1, 1))
+
+                if (np.isnan(S) != 0).sum():
                     self.lostSync = 1
-                    break;
+                    break
+
+                if (np.isnan(EC) != 0).sum():
+                    self.lostSync = 1
+                    break
+
+                tNumC = np.size(TID, axis=0)
+                peopleCountTotal = tNumC
+                print('PEOPLE:', peopleCountTotal)
+
+                if self.mIndex.shape[0]:
+                    self.mIndex += 1
+
+                # if np.size(self.point3D, axis=0):
+                #     print(self.point3D[0], self.point3D[1])
+                #     pyplot.scatter(self.point3D[0][0], self.point3D[1])
+
+                for n in range(tNumC):
+                    tid = TID[n] + 1
+
+                    if tid > self.maxNumTracks:
+                        self.lostSync = 1
+                        break
+                    try:
+                        if self.mIndex.shape[0] & (self.mIndex.shape[0] == self.point3D.shape[1]):
+                            # color
+                            ind = (self.mIndex == tid)
+
+                            for index in range(ind.size):
+                                if ind[index]:
+                                    pyplot.scatter(self.point3D[0, index], self.point3D[1, index])
+
+                    except IndexError:
+                        print('point3D out of range')
+
+                    centroid = self.computeH(S[:, n])
+                    ec = np.reshape(EC[:, n], (3, 3))
+
+                    if (ec != 0).sum() > 1:
+                        dim = self.getDim(1, centroid, ec)
+
+                if self.posAll:
+                    self.point3D = np.array((self.posAll[0], self.posAll[1], self.pointCloud[2, :]))
 
                 pyplot.pause(0.05)
                 pyplot.draw()
-
                 # line = dataPort.read(65536)
                 # dataFile.write(line)
                 ##print(line)
