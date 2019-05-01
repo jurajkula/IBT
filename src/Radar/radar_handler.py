@@ -1,54 +1,17 @@
 import io
+import os
+
 import math
 
 import matplotlib.pyplot as pyplot
+import matplotlib.cm as cm
 import numpy as np
 import serial
 import time
+from statistics import mean
+from Radar.radar_structures import *
+import json
 
-
-def lengthFromStruct(S):
-    length = 0
-    for item in S[0]:
-        length += item.itemsize
-    return length
-
-
-frameHeaderStructType = np.zeros(1, dtype=[('sync', np.uint64, 8),
-                                           ('version', np.uint32, 4),
-                                           ('platform', np.uint32, 4),
-                                           ('timestamp', np.uint32, 4),
-                                           ('packetLength', np.uint32, 4),
-                                           ('frameNumber', np.uint32, 4),
-                                           ('subframeNumber', np.uint32, 4),
-                                           ('chirpMargin', np.uint32, 4),
-                                           ('frameMargin', np.uint32, 4),
-                                           ('uartSentTime', np.uint32, 4),
-                                           ('trackProcessTime', np.uint32, 4),
-                                           ('numTLVs', np.uint16, 2),
-                                           ('checksum', np.uint16, 2)
-                                           ])
-
-tlvHeaderStruct = np.zeros(1, dtype=[('type', np.uint32, 4),
-                                     ('length', np.uint32, 4)
-                                     ])
-
-pointStruct = np.zeros(1, dtype=[('range', np.float, 4),
-                                 ('angle', np.float, 4),
-                                 ('doppler', np.float, 4),
-                                 ('snr', np.float, 4)
-                                 ])
-
-targetStruct = np.zeros(1, dtype=[('tid', np.uint32, 4),
-                                  ('posX', np.float, 4),
-                                  ('posY', np.float, 4),
-                                  ('velX', np.float, 4),
-                                  ('velY', np.float, 4),
-                                  ('accX', np.float, 4),
-                                  ('accY', np.float, 4),
-                                  ('EC', np.float, 9 * 4),
-                                  ('G', np.float, 4)
-                                  ])
 
 syncPatternUINT64 = [int('0102', 16), int('0304', 16), int('0506', 16), int('0708', 16)]
 syncPatternUINT64 = np.array(syncPatternUINT64, np.uint16).view(np.uint64)
@@ -96,6 +59,8 @@ class RadarHandler:
 
         self.maxNumTracks = 20
         self.maxNumPoints = 250
+        self.start = 0
+        self.tempFile = open('pointcloud.temp', 'r')
 
     def set_ports(self):
         reconnect = self.defaultRepeating
@@ -112,6 +77,7 @@ class RadarHandler:
             time.sleep(1)
             if self.set_control_port():
                 break
+        return self
 
     def set_data_port(self):
         print('Connecting data port...')
@@ -135,9 +101,11 @@ class RadarHandler:
 
     def set_data_file(self, file):
         self.dataFile = open(file, "rb")
+        return self
 
     def set_config_file(self, file):
-        self.configFile = open(file, "r")
+        self.configFile = open(file, 'r')
+        return self
 
     def ports_connected(self):
         if self.controlPort == 0:
@@ -162,13 +130,13 @@ class RadarHandler:
             print(line)
             line += "\n"
             self.controlPort.write(line.encode())
-            time.sleep(1)
+            time.sleep(0.5)
             echo = self.controlPort.readline()
-            time.sleep(1)
+            time.sleep(0.5)
             done = self.controlPort.readline()
-            time.sleep(1)
+            time.sleep(0.5)
             prompt = self.controlPort.readline()
-            time.sleep(1)
+            time.sleep(0.5)
             print(echo)
             print(done)
             print(prompt)
@@ -219,7 +187,7 @@ class RadarHandler:
         doppler = (posx * velx + posy * vely) / range
         return np.array((range, azimuth, doppler)).transpose()
 
-    def getDim(self, G, C, A):
+    def getDim(G, C, A):
         o, D, V = np.linalg.svd(A / G)
 
         a = 1 / math.sqrt(D[0])
@@ -228,18 +196,42 @@ class RadarHandler:
 
         return max([a, b])
 
+    @staticmethod
+    def savePointCloudToJSON(detectTime, header, pointCloud):
+        header = np.array(header, np.uint8)
+
+        data = [{
+            'time': detectTime,
+            'header': header.tolist(),
+            'pointcloud': pointCloud.tolist()
+        }]
+        with open('pointcloud.temp', 'a') as outfile:
+            outfile.write(json.dumps(data))
+            outfile.write('\n')
+
+    def loadPointCloudFromJSON(self):
+
+        line = self.tempFile.readline()
+
+        if not line:
+            exit(-1)
+
+        data = json.loads(line)[0]
+        return data
+
     def run(self):
         while True:
             while self.lostSync == 0:
-                frameStart = time.time()
-                timestamp = frameStart
                 # packetLength = dataPort.in_waiting
+                data = self.loadPointCloudFromJSON()
 
+                # print(self.start)
                 if self.gotHeader == 0:
-                    self.rxHeader = self.getData(np.uint8, self.frameHeaderLengthInBytes)
+                    # self.rxHeader = self.getData(np.uint8, self.frameHeaderLengthInBytes)
+                    self.rxHeader = np.array(data['header'], np.uint8)
                     self.byteCount = self.rxHeader.size * self.rxHeader.itemsize
-
-                start = (time.time() - frameStart) * 1000
+                    # self.start = time.time() * 1000
+                    self.start = data['time']
 
                 magicBytes = np.array(self.rxHeader[0:8], np.uint8)
                 magicBytes = magicBytes.view(np.uint64)
@@ -280,8 +272,14 @@ class RadarHandler:
                 self.numTargets = 0
                 self.mIndex = np.zeros(1)
 
+                TID = []
+                S = []
+                EC = []
+                G = []
+
                 if dataLength > 0:
-                    self.rxData = self.getData(np.uint8, dataLength)
+                    # self.rxData = self.getData(np.uint8, dataLength)
+                    self.rxData = np.array(data['pointcloud'], np.uint8)
                     self.byteCount = self.rxData.size * self.rxData.itemsize
                     # print(rxData.size)
                     # print(dataLength)
@@ -291,6 +289,10 @@ class RadarHandler:
 
                     self.offset = 0
 
+                    # self.savePointCloudToJSON(self.start, self.rxHeader, self.rxData)
+
+
+                    self.numInputPoints = 0
                     for nTlv in range(frameHeaderStructType['numTLVs'].astype(np.uint8).view(np.uint16).__int__()):
                         tlvType = np.array(self.rxData[self.offset + 0:self.offset + 4], np.uint8).view(np.uint32)
                         tlvLength = np.array(self.rxData[self.offset + 4:self.offset + 8], np.uint8).view(np.uint32)
@@ -302,18 +304,20 @@ class RadarHandler:
                         self.offset += self.tlvHeaderLengthInBytes
 
                         valueLength = tlvLength.__int__() - self.tlvHeaderLengthInBytes
+                        # print(tlvLength.__int__())
                         # print(tlvHeaderLengthInBytes)
                         if tlvType.__int__() == 6:
-                            self.numInputPoints = valueLength / self.pointLengthInBytes
+                            self.numInputPoints = int(valueLength / 16)
                             # print(valueLength)
-                            # print(pointLengthInBytes)
+                            # print(self.pointLengthInBytes)
+                            # print(self.numInputPoints)
                             if self.numInputPoints > 0:
-                                p = np.array(self.rxData[self.offset: self.offset + valueLength], np.uint8).view(
-                                    np.single)
+                                p = np.array(self.rxData[self.offset: self.offset + valueLength], np.uint8).view(np.single)
                                 # print(p)
+                                # print(p.size)
                                 ppp = int(p.size / 4)
                                 # TODO ppp prepracovanie
-                                self.pointCloud = p.reshape(4, ppp)
+                                self.pointCloud = p.reshape(4, self.numInputPoints)
 
                                 # Convert degrees to radians
                                 self.pointCloud[1, :] = self.pointCloud[1, :] * np.pi / 180
@@ -356,6 +360,7 @@ class RadarHandler:
 
                         if tlvType.__int__() == 8:
                             numIndices = int(valueLength / self.indexLengthInBytes)
+
                             self.mIndex = np.array(self.rxData[self.offset: self.offset + numIndices], np.uint8).view(
                                 np.uint8)
                             self.offset += valueLength
@@ -378,7 +383,8 @@ class RadarHandler:
                 # print(snrAll)
 
                 # if snrAll.all() * 10 > 0:
-                # pyplot.scatter(self.posAll[0], self.posAll[1])
+                #     if self.posAll:
+                #         pyplot.scatter(self.posAll[0], self.posAll[1])
                 # else:
                 # self.lostSync = 1
                 # break
@@ -412,9 +418,10 @@ class RadarHandler:
                 #     print(self.point3D[0], self.point3D[1])
                 #     pyplot.scatter(self.point3D[0][0], self.point3D[1])
 
+                colorIndex = 0
                 for n in range(tNumC):
                     tid = TID[n] + 1
-
+                    colors = cm.rainbow(np.linspace(0, 1, tNumC))
                     if tid > self.maxNumTracks:
                         self.lostSync = 1
                         break
@@ -423,18 +430,37 @@ class RadarHandler:
                             # color
                             ind = (self.mIndex == tid)
 
+                            centerX = []
+                            centerY = []
+
                             for index in range(ind.size):
                                 if ind[index]:
-                                    pyplot.scatter(self.point3D[0, index], self.point3D[1, index])
+                                    # print(self.point3D[0][index], self.point3D[1][index])
+                                    pyplot.scatter(self.point3D[0][index], self.point3D[1][index], color=colors[colorIndex], s=10)
+                                    centerX.append(self.point3D[0][index])
+                                    centerY.append(self.point3D[1][index])
+                            centerX = np.mean(centerX)
+                            centerY = np.mean(centerY)
+                            if centerX and centerY:
+                                pyplot.scatter(centerX, centerY)
+                                print(centerX, centerY)
 
                     except IndexError:
                         print('point3D out of range')
 
-                    centroid = self.computeH(S[:, n])
+                    colorIndex += 1
+                    # centroid = self.computeH(S[:, n])
+                    # centerX = np.mean(self.point3D[0])
+                    # centerY = np.mean(self.point3D[1])
+                    # print(centerX, centerY)
+                    # pyplot.scatter(centerX, centerY)
+
                     ec = np.reshape(EC[:, n], (3, 3))
 
-                    if (ec != 0).sum() > 1:
-                        dim = self.getDim(1, centroid, ec)
+                    # if (ec != 0).sum() > 1:
+                        # dim = self.getDim(1, centroid, ec)
+                        # print(S[0],n)
+                        # pyplot.scatter(S[n, 0], S[n, 1], color=colors[colorIndex], facecolors='none', s=dim)
 
                 if self.posAll:
                     self.point3D = np.array((self.posAll[0], self.posAll[1], self.pointCloud[2, :]))
@@ -446,7 +472,7 @@ class RadarHandler:
                 ##print(line)
                 # time.sleep(1)
                 # count -= 1
-                break
+                #break
 
                 # if self.targetFrameNum:
                 lostSyncTime = time.time()
@@ -477,3 +503,6 @@ class RadarHandler:
 
                     self.byteCount = self.byteCount + 8
                     self.gotHeader = 1
+                    self.start = time.time() * 1000
+
+                    # data = self.loadPointCloudFromJSON()
