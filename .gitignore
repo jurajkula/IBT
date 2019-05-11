@@ -3,3 +3,4 @@ data/*
 .idea/
 src/Radar/__pycache__
 src/Fusion/__pycache__
+modules/*/__pycache__
