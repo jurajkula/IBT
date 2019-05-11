@@ -1,5 +1,5 @@
-modules/*
-
+libraries/*
+data/*
 .idea/
 src/Radar/__pycache__
 src/Fusion/__pycache__
