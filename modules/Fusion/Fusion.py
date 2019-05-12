@@ -1,6 +1,7 @@
 import numpy as np
 
-from modules.Fusion.FusionObject import RadarObject
+from modules.Config import Config
+from modules.Fusion.FusionObject import FusionObject
 
 
 def createMap(count):
@@ -13,33 +14,29 @@ def createMap(count):
 
 
 class Fusion:
-    @staticmethod
-    def fuse(picks, imageShape, radarData):
+    def __init__(self, config: Config):
+        self.config = config
+
+    def fuse(self, picks, imageShape, radarData):
 
         if len(picks) == 0:
             return None
 
-        test = picks
-
-        test = test[test[:, 3].argsort()]
+        picks = picks[picks[:, 3].argsort()]
         radarData = sorted(radarData, key=lambda k: k['distance'])
 
-        s = 10
+        radarX = self.config.radarX / self.config.fusionDelimiter
+        X = imageShape[0] / self.config.fusionDelimiter
+        a = createMap(self.config.fusionDelimiter)
 
-        radarX = 12 / s
-
-        X = imageShape[0] / s
-
-        a = createMap(s)
-
-        for t in test:
+        for t in picks:
             x = np.mean([t[0], t[2]])
-            obj = RadarObject()
+            obj = FusionObject()
             obj.setDetection(True).setRect(t)
             a[int(x / X)].append(obj)
 
         for obj in radarData:
-            iX = int((obj['x'] + 6) / radarX)
+            iX = int((obj['x'] + self.config.shift) / radarX)
             if len(a[iX]) == 0:
                 continue
 

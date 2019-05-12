@@ -1,18 +1,15 @@
 import io
 import os
 import threading
-
 import math
-
 import matplotlib.pyplot as pyplot
 import matplotlib.cm as cm
-import numpy as np
 import serial
 import time
-from statistics import mean
 from modules.Radar.RadarStructures import *
 import json
 from modules.constants import *
+from modules.errors import *
 
 syncPatternUINT64 = [int('0102', 16), int('0304', 16), int('0506', 16), int('0708', 16)]
 syncPatternUINT64 = np.array(syncPatternUINT64, np.uint16).view(np.uint64)
@@ -163,6 +160,10 @@ class RadarHandler (threading.Thread):
             time.sleep(1)
             if self.set_control_port(controlPort):
                 break
+
+        if not self.ports_connected():
+            self.logger.log('Cannot connect to ports.', LOGGER_STATE_ERROR)
+            exit(ERROR_PORTS_CONNECTION)
         return self
 
     def setTempFile(self):
@@ -216,17 +217,26 @@ class RadarHandler (threading.Thread):
             line = line.strip()
             print(line)
             line += "\n"
-            self.controlPort.write(line.encode())
-            time.sleep(0.5)
-            echo = self.controlPort.readline()
-            time.sleep(0.5)
-            done = self.controlPort.readline()
-            time.sleep(0.5)
-            prompt = self.controlPort.readline()
-            time.sleep(0.5)
-            print(echo)
-            print(done)
-            print(prompt)
+            done = ''
+            count = 0
+
+            while done != 'DONE':
+                if count == 5:
+                    self.logger.log('Cannot send command to radar.', LOGGER_STATE_ERROR)
+                    exit(ERROR_RADAR_COMMAND)
+
+                self.controlPort.write(line.encode())
+                time.sleep(0.5)
+                echo = self.controlPort.readline()
+                time.sleep(0.5)
+                done = self.controlPort.readline()
+                time.sleep(0.5)
+                prompt = self.controlPort.readline()
+                time.sleep(0.5)
+                print(echo)
+                print(done)
+                print(prompt)
+                count += 1
 
     def getData(self, dataType, length):
         if self.ports_connected():
@@ -255,7 +265,6 @@ class RadarHandler (threading.Thread):
                 if self.state == 'cancel':
                     break
 
-                print(self.timestamp)
                 if self.state == 'load':
                     data = loadPointCloudFromJSON(self.tempFile)
 
@@ -271,7 +280,6 @@ class RadarHandler (threading.Thread):
                         self.timestamp += (new - current)
                         current = new
 
-
                     else:
                         self.rxHeader = self.getData(np.uint8, self.frameHeaderLengthInBytes)
                         self.timestamp = time.time() * 1000
@@ -282,7 +290,6 @@ class RadarHandler (threading.Thread):
                 magicBytes = magicBytes.view(np.uint64)
 
                 if magicBytes != syncPatternUINT64:
-                    # print('REMOVE\n')
                     self.lostSync = 1
                     break
 
@@ -294,8 +301,6 @@ class RadarHandler (threading.Thread):
                     self.lostSync = 1
                     break
 
-                # print('CONITNUE')
-                # exit()
                 self.offset = self.initFrameHeaderStruct()
 
                 if self.gotHeader == 1:
@@ -362,8 +367,6 @@ class RadarHandler (threading.Thread):
 
                                 self.posAll = [np.multiply(self.pointCloud[0, :], np.sin(self.pointCloud[1, :])),
                                                np.multiply(self.pointCloud[0, :], np.cos(self.pointCloud[1, :]))]
-
-                                snrAll = self.pointCloud[3, :]
 
                                 self.numOutputPoints = np.size(self.pointCloud, 1)
 
@@ -439,19 +442,6 @@ class RadarHandler (threading.Thread):
                     if tid > self.maxNumTracks:
                         self.lostSync = 1
                         break
-                    try:
-                        if self.mIndex.shape[0] & (self.mIndex.shape[0] == self.point3D.shape[1]):
-                            # color
-                            ind = (self.mIndex == tid)
-
-                            # for index in range(ind.size):
-                            #     if ind[index]:
-                            #         # print(self.point3D[0][index], self.point3D[1][index])
-                            #         pyplot.scatter(self.point3D[0][index], self.point3D[1][index], color=colors[colorIndex], s=10)
-
-                    except IndexError:
-                        self.logger.log('point3D out of range', LOGGER_STATE_WARNING)
-                        # print('point3D out of range')
 
                     pyplot.scatter(S[0, n], S[1, n], color=colors[colorIndex], facecolors='none', s=100)
 
@@ -463,12 +453,10 @@ class RadarHandler (threading.Thread):
                         'velocity': vel
                     }
 
-                    # print(S[:, n])
                     self.radarData.append(rObject)
 
                     colorIndex += 1
 
-                # print(detectionObjects)
                 if self.posAll:
                     self.point3D = np.array((self.posAll[0], self.posAll[1], self.pointCloud[2, :]))
 
@@ -476,9 +464,6 @@ class RadarHandler (threading.Thread):
                 pyplot.draw()
 
             while self.lostSync:
-                # self.lostSync = 0
-                # break
-                # print('here')
                 n = 0
                 for n in range(8):
                     if self.state == 'load2':
@@ -510,5 +495,3 @@ class RadarHandler (threading.Thread):
                     self.byteCount = self.byteCount + 8
                     self.gotHeader = 1
                     self.timestamp = time.time() * 1000
-
-                    # data = self.loadPointCloudFromJSON()

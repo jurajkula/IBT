@@ -1,4 +1,4 @@
-class RadarObject:
+class FusionObject:
     def __init__(self):
         self.detected = False
         self.fused = False

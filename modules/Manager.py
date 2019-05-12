@@ -38,7 +38,7 @@ class Manager:
         self.cameraHandler.setLogger(Logger(True))
 
     def runner(self):
-        fusion = Fusion.Fusion()
+        fusion = Fusion.Fusion(self.config)
 
         self.radarHandler.start()
 
@@ -55,7 +55,7 @@ class Manager:
                     oldFusion = None
 
                 if c % 3 == 0:
-                    pick = Detect.detectPedestrian(frame)
+                    pick = Detect.detectPedestrian(frame, self.config.winStride, self.config.scale)
                     c = 0
 
                     fused = fusion.fuse(pick,

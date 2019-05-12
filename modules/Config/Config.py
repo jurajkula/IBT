@@ -7,6 +7,11 @@ class Config:
         self.configGlobal = None
         self.configRadar = None
         self.oldDetection = 5
+        self.fusionDelimiter = 10
+        self.radarX = 12
+        self.winStride = 4
+        self.scale = 1.2
+        self.shift = 6
 
     def loadConfigFiles(self):
         try:
