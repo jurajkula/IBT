@@ -6,6 +6,7 @@ import matplotlib.pyplot as pyplot
 import matplotlib.cm as cm
 import serial
 import time
+
 from modules.Radar.RadarStructures import *
 import json
 from modules.constants import *
@@ -44,13 +45,11 @@ def getDim(G, C, A):
     return max([a, b])
 
 
-def savePointCloudToJSON(detectTime, header, pointCloud):
-    header = np.array(header, np.uint8)
+def savePointCloudToJSON(detectTime, objects):
 
     data = [{
         'time': detectTime,
-        'header': header.tolist(),
-        'pointcloud': pointCloud.tolist()
+        'objects': objects,
     }]
     with open('pointcloud.temp', 'a') as outfile:
         outfile.write(json.dumps(data))
@@ -75,7 +74,7 @@ def loadPointCloudFromJSON(tempFile):
     line = tempFile.readline()
 
     if not line:
-        exit(-1)
+        return None
 
     data = json.loads(line)[0]
     return data
@@ -85,12 +84,13 @@ class RadarHandler (threading.Thread):
     configFile: io.TextIOWrapper
     controlPort: serial.Serial
     dataPort: serial.Serial
+    lock: threading.Lock()
 
     def __init__(self):
         threading.Thread.__init__(self)
         self.dataPort = 0
         self.controlPort = 0
-        self.dataFile = open('data/Radar/20190510/20190510T100300006.bin')
+        self.dataFile = open('data/Radar/20190510/20190510T100400004.bin')
         self.configFile = None
         self.defaultRepeating = 5
 
@@ -138,7 +138,8 @@ class RadarHandler (threading.Thread):
         self.state = state
 
         if state == 'save':
-            os.remove("data/pointcloud.temp")
+            if os.path.isfile('data/pointcloud.temp'):
+                os.remove("data/pointcloud.temp")
 
         if state == 'load':
             self.setTempFile()
@@ -217,22 +218,24 @@ class RadarHandler (threading.Thread):
             line = line.strip()
             print(line)
             line += "\n"
-            done = ''
-            count = 0
+            done = b''
+            count = 1
 
-            while done != 'DONE':
-                if count == 5:
+            while done.decode().find('Done') == -1:
+                if count > 5:
                     self.logger.log('Cannot send command to radar.', LOGGER_STATE_ERROR)
                     exit(ERROR_RADAR_COMMAND)
 
+                sleepTime = 0.1 * count
+
                 self.controlPort.write(line.encode())
-                time.sleep(0.5)
+                time.sleep(sleepTime)
                 echo = self.controlPort.readline()
-                time.sleep(0.5)
+                time.sleep(sleepTime)
                 done = self.controlPort.readline()
-                time.sleep(0.5)
+                time.sleep(sleepTime)
                 prompt = self.controlPort.readline()
-                time.sleep(0.5)
+                time.sleep(sleepTime)
                 print(echo)
                 print(done)
                 print(prompt)
@@ -256,9 +259,22 @@ class RadarHandler (threading.Thread):
         return offset
 
     def run(self):
-        # self.timestamp = 1557482580
-        if self.state == 'load2':
-            current = time.time()
+        if self.state == 'load3':
+            while self.tempFile.readable():
+                data = loadPointCloudFromJSON(self.tempFile)
+                print(data['time'])
+                pyplot.clf()
+                pyplot.axis([-5, 5, -1, 10])
+
+                for obj in data['objects']:
+                    print(obj)
+                    pyplot.scatter(obj['x'], obj['distance'], color='C0', facecolors='none', s=100)
+                    self.radarData.append(obj)
+
+                pyplot.pause(0.05)
+                pyplot.draw()
+
+            exit()
 
         while self.state != 'cancel':
             while self.lostSync == 0:
@@ -268,7 +284,7 @@ class RadarHandler (threading.Thread):
                 if self.state == 'load':
                     data = loadPointCloudFromJSON(self.tempFile)
 
-                # print(self.timestamp)
+                print(self.timestamp)
                 if self.gotHeader == 0:
                     if self.state == 'load':
                         self.rxHeader = np.array(data['header'], np.uint8)
@@ -276,9 +292,7 @@ class RadarHandler (threading.Thread):
 
                     elif self.state == 'load2':
                         self.rxHeader = np.fromfile(self.dataFile, np.uint8, self.frameHeaderLengthInBytes)
-                        new = time.time()
-                        self.timestamp += (new - current)
-                        current = new
+                        self.timestamp = int(time.time())
 
                     else:
                         self.rxHeader = self.getData(np.uint8, self.frameHeaderLengthInBytes)
@@ -342,9 +356,6 @@ class RadarHandler (threading.Thread):
                         break
 
                     self.offset = 0
-
-                    if self.state == 'save':
-                        savePointCloudToJSON(self.timestamp, self.rxHeader, self.rxData)
 
                     self.numInputPoints = 0
                     for nTlv in range(frameHeaderStructType['numTLVs'].astype(np.uint8).view(np.uint16).__int__()):
@@ -436,6 +447,8 @@ class RadarHandler (threading.Thread):
                 colorIndex = 0
                 self.radarData.clear()
 
+                objectsList = []
+
                 for n in range(tNumC):
                     tid = TID[n] + 1
                     colors = cm.rainbow(np.linspace(0, 1, tNumC))
@@ -452,10 +465,14 @@ class RadarHandler (threading.Thread):
                         'x': S[0, n],
                         'velocity': vel
                     }
-
+                    print(rObject)
                     self.radarData.append(rObject)
+                    objectsList.append(rObject)
 
                     colorIndex += 1
+
+                if self.state == 'save':
+                    savePointCloudToJSON(self.timestamp, objectsList)
 
                 if self.posAll:
                     self.point3D = np.array((self.posAll[0], self.posAll[1], self.pointCloud[2, :]))
@@ -494,4 +511,5 @@ class RadarHandler (threading.Thread):
 
                     self.byteCount = self.byteCount + 8
                     self.gotHeader = 1
-                    self.timestamp = time.time() * 1000
+                    # self.timestamp = time.time() * 1000
+                    self.timestamp = int(time.time())

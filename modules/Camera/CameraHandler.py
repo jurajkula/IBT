@@ -25,6 +25,8 @@ class CameraHandler:
 
     @staticmethod
     def insertDataToImage(frame, data):
+        # print('t')
+        # data.print()
         cv2.rectangle(
             frame,
             (data.rect[0], data.rect[1]),

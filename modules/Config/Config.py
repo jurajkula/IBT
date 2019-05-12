@@ -10,7 +10,7 @@ class Config:
         self.fusionDelimiter = 10
         self.radarX = 12
         self.winStride = 4
-        self.scale = 1.2
+        self.scale = 1.05
         self.shift = 6
 
     def loadConfigFiles(self):
