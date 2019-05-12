@@ -1,19 +1,21 @@
 import imutils
 
-from modules.CaptureCamera import Detect
-from modules.CaptureCamera.Capture import CameraHandler
+from modules.Camera import Detect
+from modules.Camera.CameraHandler import CameraHandler
+from modules.Config import Config
 from modules.Fusion import Fusion
-from modules.Radar.radar_handler import RadarHandler
+from modules.Radar.RadarHandler import RadarHandler
 import cv2
 from modules.Logger.Logger import Logger
 
 
 class Manager:
-    def __init__(self):
+    def __init__(self, config: Config):
         self.state = 'load'
         self.radarHandler, self.cameraHandler = self.createHandlers()
         self.logger = Logger(True)
         self.radarData = []
+        self.config = config
 
     @staticmethod
     def createHandlers():
@@ -25,7 +27,7 @@ class Manager:
     def configureRadar(self):
         if self.state != 'load':
             self.radarHandler.set_ports('/dev/ttyACM1', '/dev/ttyACM0')\
-                .set_config_file("./mmw_pplcount_demo_default.cfg")\
+                .set_config_file(self.config.configRadar)\
                 .send_config()
         self.radarHandler.setState(self.state)
         self.radarHandler.setLogger(Logger(True))
@@ -35,9 +37,6 @@ class Manager:
         self.cameraHandler.setState(self.state)
         self.cameraHandler.setLogger(Logger(True))
 
-    def aa(self):
-        return self.cameraHandler.cap.read()
-
     def runner(self):
         fusion = Fusion.Fusion()
 
@@ -46,21 +45,18 @@ class Manager:
         c = 1
         oldFusion = None
 
-        oldFusionFrames = 5
-
         while self.cameraHandler.cap.isOpened():
             # Capture frame-by-frame
-            ret, frame = self.aa()
+            ret, frame = self.cameraHandler.captureFrame()
             frame = imutils.resize(frame, width=min(600, frame.shape[1]))
 
             if ret:
-                if (c % oldFusionFrames == 0) & (oldFusionFrames > 0):
+                if (c % self.config.oldDetection == 0) & (self.config.oldDetection > 0):
                     oldFusion = None
 
                 if c % 3 == 0:
                     pick = Detect.detectPedestrian(frame)
                     c = 0
-                    print(self.radarData)
 
                     fused = fusion.fuse(pick,
                                         [self.cameraHandler.cap.get(3), self.cameraHandler.cap.get(4)],
@@ -71,7 +67,8 @@ class Manager:
 
                 if oldFusion is None:
                     cv2.imshow('Frame', frame)
-                    if cv2.waitKey(25) & 0xFF == ord('q'):
+                    if cv2.waitKey(25) == ord('q'):
+                        self.radarHandler.setState('cancel')
                         break
                     c += 1
                     continue
@@ -80,35 +77,13 @@ class Manager:
                     for oo in o:
                         if oo.detected is not True:
                             continue
-
-                        cv2.rectangle(
-                            frame,
-                            (oo.rect[0], oo.rect[1]),
-                            (oo.rect[2], oo.rect[3]),
-                            (0, 255, 0),
-                            2)
-
-                        cv2.putText(frame,
-                                    'Distance: ' + str(round(oo.distance, 4)) + 'm',
-                                    (oo.rect[0], oo.rect[1] - 5),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 0.2,
-                                    (255, 0, 0),
-                                    1,
-                                    cv2.LINE_AA)
-
-                        cv2.putText(frame,
-                                    'Velocity: ' + str(round(oo.velocity, 4)) + 'm/s',
-                                    (oo.rect[0], oo.rect[1] - 15),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 0.2,
-                                    (255, 0, 0),
-                                    1,
-                                    cv2.LINE_AA)
+                        self.cameraHandler.insertDataToImage(frame,oo)
 
                 # Display the resulting frame
                 cv2.imshow('Frame', frame)
 
                 # Press Q on keyboard to  exit
-                if cv2.waitKey(25) & 0xFF == ord('q'):
+                if cv2.waitKey(25) == ord('q'):
                     break
                 c += 1
 
@@ -117,3 +92,10 @@ class Manager:
                 break
 
         self.radarHandler.join()
+        self.cameraHandler.releaseAndClose()
+
+        counter = 0
+        while self.radarHandler.is_alive():
+            if counter == 100:
+                exit(-5)
+            counter += 1

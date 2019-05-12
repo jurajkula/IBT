@@ -1,6 +1,6 @@
 import numpy as np
 
-from modules.Radar.RadarObject import RadarObject
+from modules.Fusion.FusionObject import RadarObject
 
 
 def createMap(count):
@@ -13,7 +13,8 @@ def createMap(count):
 
 
 class Fusion:
-    def fuse(self, picks, imageShape, radarData):
+    @staticmethod
+    def fuse(picks, imageShape, radarData):
 
         if len(picks) == 0:
             return None

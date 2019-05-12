@@ -10,7 +10,7 @@ import numpy as np
 import serial
 import time
 from statistics import mean
-from modules.Radar.radar_structures import *
+from modules.Radar.RadarStructures import *
 import json
 from modules.constants import *
 
@@ -94,7 +94,7 @@ class RadarHandler (threading.Thread):
         self.dataPort = 0
         self.controlPort = 0
         self.dataFile = open('data/Radar/20190510/20190510T100300006.bin')
-        self.configFile = 0
+        self.configFile = None
         self.defaultRepeating = 5
 
         self.frameHeaderLengthInBytes = lengthFromStruct(frameHeaderStructType)
@@ -193,8 +193,8 @@ class RadarHandler (threading.Thread):
         self.dataFile = open(file, "rb")
         return self
 
-    def set_config_file(self, file):
-        self.configFile = open(file, 'r')
+    def set_config_file(self, config):
+        self.configFile = config
         return self
 
     def ports_connected(self):
@@ -208,9 +208,6 @@ class RadarHandler (threading.Thread):
 
     def send_config(self):
         if self.ports_connected() == 0:
-            return
-
-        if self.configFile == 0:
             return
 
         for line in self.configFile:
@@ -253,8 +250,11 @@ class RadarHandler (threading.Thread):
         if self.state == 'load2':
             current = time.time()
 
-        while True:
+        while self.state != 'cancel':
             while self.lostSync == 0:
+                if self.state == 'cancel':
+                    break
+
                 print(self.timestamp)
                 if self.state == 'load':
                     data = loadPointCloudFromJSON(self.tempFile)
@@ -476,8 +476,8 @@ class RadarHandler (threading.Thread):
                 pyplot.draw()
 
             while self.lostSync:
-                self.lostSync = 0
-                break
+                # self.lostSync = 0
+                # break
                 # print('here')
                 n = 0
                 for n in range(8):
