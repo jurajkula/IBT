@@ -4,13 +4,13 @@ import numpy as np
 import cv2
 
 
-def detectPedestrian(image):
+def detectPedestrian(image, winStride, scale):
     hog = cv2.HOGDescriptor()
     hog.setSVMDetector(cv2.HOGDescriptor_getDefaultPeopleDetector())
 
     # detect people in the image
-    (rects, weights) = hog.detectMultiScale(image, winStride=(4, 4),
-                                            padding=(8, 8), scale=1.2)
+    (rects, weights) = hog.detectMultiScale(image, winStride=(winStride, winStride),
+                                            padding=(8, 8), scale=scale)
 
     # apply non-maxima suppression to the bounding boxes using a
     # fairly large overlap threshold to try to maintain overlapping
