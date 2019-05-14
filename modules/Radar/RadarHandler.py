@@ -1,14 +1,14 @@
 import io
-import os
+import json
 import threading
-import math
-import matplotlib.pyplot as pyplot
-import matplotlib.cm as cm
-import serial
 import time
 
+import math
+import matplotlib.cm as cm
+import matplotlib.pyplot as pyplot
+import serial
+
 from modules.Radar.RadarStructures import *
-import json
 from modules.constants import *
 from modules.errors import *
 
@@ -45,13 +45,13 @@ def getDim(G, C, A):
     return max([a, b])
 
 
-def savePointCloudToJSON(detectTime, objects):
+def savePointCloudToJSON(path, detectTime, objects):
 
     data = [{
         'time': detectTime,
         'objects': objects,
     }]
-    with open('pointcloud.temp', 'a') as outfile:
+    with open(path + 'radardata.temp', 'a') as outfile:
         outfile.write(json.dumps(data))
         outfile.write('\n')
 
@@ -127,6 +127,7 @@ class RadarHandler (threading.Thread):
         self.logger = None
         self.radarData = []
         self.lock = None
+        self.dataRadarPath = ''
 
     def setRadarData(self, radarData):
         self.radarData = radarData
@@ -137,9 +138,9 @@ class RadarHandler (threading.Thread):
     def setState(self, state):
         self.state = state
 
-        if state == 'save':
-            if os.path.isfile('data/pointcloud.temp'):
-                os.remove("data/pointcloud.temp")
+        # if state == 'save':
+        #     if os.path.isfile('data/pointcloud.temp'):
+        #         os.remove("data/pointcloud.temp")
 
         if state == 'load':
             self.setTempFile()
@@ -262,12 +263,16 @@ class RadarHandler (threading.Thread):
         if self.state == 'load3':
             while self.tempFile.readable():
                 data = loadPointCloudFromJSON(self.tempFile)
-                print(data['time'])
+                if data is None:
+                    exit()
+                # print(data['time'])
                 pyplot.clf()
-                pyplot.axis([-5, 5, -1, 10])
-
+                pyplot.axis([-6, 6, 0, 10])
+                self.radarData.clear()
                 for obj in data['objects']:
-                    print(obj)
+                    # print(obj)
+                    obj['x'] = 5 - obj['x'] - 5
+                    obj['distance'] += 12
                     pyplot.scatter(obj['x'], obj['distance'], color='C0', facecolors='none', s=100)
                     self.radarData.append(obj)
 
@@ -471,8 +476,8 @@ class RadarHandler (threading.Thread):
 
                     colorIndex += 1
 
-                if self.state == 'save':
-                    savePointCloudToJSON(self.timestamp, objectsList)
+                if self.state == 'load2':
+                    savePointCloudToJSON(self.dataRadarPath, self.timestamp, objectsList)
 
                 if self.posAll:
                     self.point3D = np.array((self.posAll[0], self.posAll[1], self.pointCloud[2, :]))

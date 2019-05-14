@@ -2,6 +2,8 @@ import importlib.machinery
 
 import cv2
 
+from modules.Logger.Logger import Logger
+
 
 class CameraHandler:
     def __init__(self):
@@ -24,9 +26,33 @@ class CameraHandler:
         return self.cap.read()
 
     @staticmethod
+    def insertCountDataToImage(frame, count):
+        cv2.putText(frame,
+                    'People detected - fusion: ' + str(count[0]),
+                    (10, frame.shape[0] - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.3,
+                    (0, 255, 0),
+                    1,
+                    cv2.LINE_AA)
+        cv2.putText(frame,
+                    'People detected - camera ' + str(count[1]),
+                    (10, frame.shape[0] - 20),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.3,
+                    (0, 255, 0),
+                    1,
+                    cv2.LINE_AA)
+        cv2.putText(frame,
+                    'People detected - radar ' + str(count[2]),
+                    (10, frame.shape[0] - 30),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.3,
+                    (0, 255, 0),
+                    1,
+                    cv2.LINE_AA)
+
+    @staticmethod
     def insertDataToImage(frame, data):
-        # print('t')
-        # data.print()
+        print('t')
+        data.print()
         cv2.rectangle(
             frame,
             (data.rect[0], data.rect[1]),
