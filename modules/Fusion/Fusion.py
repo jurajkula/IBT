@@ -18,7 +18,6 @@ class Fusion:
         self.config = config
 
     def fuse(self, picks, imageShape, radarData):
-        # print('FUSION')
         if len(picks) == 0:
             return None
         picks = picks[picks[:, 3].argsort()]

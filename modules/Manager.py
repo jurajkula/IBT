@@ -116,7 +116,6 @@ class Manager:
 
         if self.state == 'load':
             for file in sorted(os.listdir(self.temp + '/camera/')):
-                # print(file)
                 fusedCount = 0
                 pick = [0]
                 img = cv2.imread(self.temp + '/camera/' + file)
@@ -171,7 +170,6 @@ class Manager:
                         self.cameraHandler.insertDataToImage(frame, oo)
 
                 cv2.imshow('Frame', frame)
-                # print(time.time() * 1000 - tms)
                 if cv2.waitKey(25) == ord('q'):
                     self.radarHandler.setState('cancel')
                     break
@@ -188,43 +186,6 @@ class Manager:
 
         c = 0
 
-        # location = './data/UnicamSaver/20190510/04'
-        # sleeeep = 1.8
-        # for file in sorted(os.listdir(location)):
-        #
-        #     # print(file)
-        #     img = cv2.imread(location + '/' + file)
-        #     # tms = time.time() * 1000
-        #     # img = cv2.imread('./data/me1.png')
-        #     frame = imutils.resize(img, width=min(self.config.imageSize, img.shape[1]))
-        #     pick = Detect.detectPedestrian(frame, self.config.winStride, self.config.scale)
-        #     fused = fusion.fuse(pick,
-        #                         [frame.shape[0], frame.shape[1]],
-        #                         self.radarData)
-        #
-        #     # print(self.radarData)
-        #     self.cameraHandler.insertCountDataToImage(frame, [fused[1] if fused is not None else 0, len(pick),
-        #                                                       len(self.radarData)])
-        #
-        #     if fused is None:
-        #         cv2.imshow('Frame', frame)
-        #         # print(time.time() * 1000 - tms)
-        #         cv2.waitKey(25)
-        #         # exit()
-        #         continue
-        #
-        #     for o in fused[0]:
-        #         for oo in o:
-        #             if oo.detected is not True:
-        #                 continue
-        #             self.cameraHandler.insertDataToImage(frame, oo)
-        #
-        #     cv2.imshow('Frame', frame)
-        #     # print(time.time() * 1000 - tms)
-        #     cv2.waitKey(25)
-        #     # exit()
-        #     time.sleep(sleeeep)
-
         while self.cameraHandler.cap.isOpened():
             time.sleep(0.001)
             fusedCount = 0
@@ -235,8 +196,8 @@ class Manager:
             frame = imutils.resize(frame, width=min(600, frame.shape[1]))
 
             if ret:
-                # if (c % self.config.oldDetection == 0) & (self.config.oldDetection > 0):
-                #     oldFusion = None
+                if (c % self.config.oldDetection == 0) & (self.config.oldDetection > 0):
+                    oldFusion = None
 
                 if c % int(fps / 4) == 0:
                     timestamp = time.time() * 1000
@@ -281,13 +242,14 @@ class Manager:
                     for oo in o:
                         if oo.detected is not True:
                             continue
-                        self.cameraHandler.insertDataToImage(frame,oo)
+                        self.cameraHandler.insertDataToImage(frame, oo)
 
                 # Display the resulting frame
                 cv2.imshow('Frame', frame)
 
                 # Press Q on keyboard to  exit
                 if cv2.waitKey(25) == ord('q'):
+                    self.radarHandler.setState('cancel')
                     break
                 c += 1
 
@@ -297,9 +259,3 @@ class Manager:
 
         self.radarHandler.join()
         self.cameraHandler.releaseAndClose()
-
-        # counter = 0
-        # while self.radarHandler.is_alive():
-        #     if counter == 100:
-        #         exit(-5)
-        #     counter += 1

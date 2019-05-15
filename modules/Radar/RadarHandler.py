@@ -91,7 +91,6 @@ class RadarHandler (threading.Thread):
         threading.Thread.__init__(self)
         self.dataPort = 0
         self.controlPort = 0
-        self.dataFile = open('data/Radar/20190510/20190510T100400004.bin')
         self.configFile = None
         self.defaultRepeating = 5
 
@@ -195,10 +194,6 @@ class RadarHandler (threading.Thread):
             return False
         return True
 
-    def set_data_file(self, file):
-        self.dataFile = open(file, "rb")
-        return self
-
     def set_config_file(self, config):
         self.configFile = config
         return self
@@ -245,11 +240,11 @@ class RadarHandler (threading.Thread):
                 count += 1
 
     def getData(self, dataType, length):
+        data = None
         if self.ports_connected():
             data = self.dataPort.read(length)
             data = np.frombuffer(data, dtype=dataType)
-        else:
-            data = np.fromfile(self.dataFile, dataType, length)
+
         return data
 
     def initFrameHeaderStruct(self):
@@ -289,18 +284,13 @@ class RadarHandler (threading.Thread):
                 periodOfReset += 1
 
                 if self.gotHeader == 0:
-                    if self.state == 'load2':
-                        self.rxHeader = np.fromfile(self.dataFile, np.uint8, self.frameHeaderLengthInBytes)
+                    self.rxHeader = self.getData(np.uint8, self.frameHeaderLengthInBytes)
+
+                    self.lockRadarTimestamp.acquire()
+                    try:
                         self.timestamp[0] = time.time() * 1000
-
-                    else:
-                        self.rxHeader = self.getData(np.uint8, self.frameHeaderLengthInBytes)
-
-                        self.lockRadarTimestamp.acquire()
-                        try:
-                            self.timestamp[0] = time.time() * 1000
-                        finally:
-                            self.lockRadarTimestamp.release()
+                    finally:
+                        self.lockRadarTimestamp.release()
 
                     self.byteCount = self.rxHeader.size * self.rxHeader.itemsize
 
@@ -345,10 +335,7 @@ class RadarHandler (threading.Thread):
                 G = []
 
                 if dataLength > 0:
-                    if self.state == 'load2':
-                        self.rxData = np.fromfile(self.dataFile, np.uint8, dataLength)
-                    else:
-                        self.rxData = self.getData(np.uint8, dataLength)
+                    self.rxData = self.getData(np.uint8, dataLength)
 
                     self.byteCount = self.rxData.size * self.rxData.itemsize
 
@@ -478,10 +465,7 @@ class RadarHandler (threading.Thread):
             while self.lostSync:
                 n = 0
                 for n in range(8):
-                    if self.state == 'load2':
-                        rxByte = np.fromfile(self.dataFile, np.uint8, 1)
-                    else:
-                        rxByte = self.getData(np.uint8, 1)
+                    rxByte = self.getData(np.uint8, 1)
 
                     if rxByte != syncPatternUINT8[n]:
                         self.outOfSyncBytes = self.outOfSyncBytes + 1
@@ -494,10 +478,7 @@ class RadarHandler (threading.Thread):
                     if self.frameNum > 10000:
                         self.frameNum = 1
 
-                    if self.state == 'load2':
-                        header = np.fromfile(self.dataFile, np.uint8, self.frameHeaderLengthInBytes - 8)
-                    else:
-                        header = self.getData(np.uint8, self.frameHeaderLengthInBytes - 8)
+                    header = self.getData(np.uint8, self.frameHeaderLengthInBytes - 8)
 
                     self.byteCount = header.size * header.itemsize
                     header = header.tolist()

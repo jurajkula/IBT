@@ -44,6 +44,9 @@ class Config:
             if line.find('ImageSize') != -1:
                 self.imageSize = int(line.split(':')[1].strip())
 
+            if line.find('OldDetection') != -1:
+                self.oldDetection = int(line.split(':')[1].strip())
+
     def loadConfigFiles(self):
         try:
             self.configGlobal = open('config/global.cfg', 'r')
