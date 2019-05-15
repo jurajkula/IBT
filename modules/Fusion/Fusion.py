@@ -18,7 +18,7 @@ class Fusion:
         self.config = config
 
     def fuse(self, picks, imageShape, radarData):
-        print('FUSION')
+        # print('FUSION')
         if len(picks) == 0:
             return None
         picks = picks[picks[:, 3].argsort()]
@@ -47,6 +47,24 @@ class Fusion:
             if len(a[iX]) > i:
                 a[iX][i].setDistance(obj['distance']).setVelocity(obj['velocity']).setFusion(True)
                 fusedCount += 1
+
+        for ind in range(len(a)):
+            for obj in a[ind]:
+                if len(a) == ind + 1:
+                    break
+
+                if not obj.fused:
+                    continue
+
+                for cobj in a[ind+1]:
+                    objD = np.mean(obj.rect[1], obj.rect[2])
+                    cobjD = np.mean(cobj.rect[1], cobj.rect[2])
+
+                    if objD < cobjD & obj['distance'] > cobj['distance']:
+                        obj.setFusion(False)
+
+                    if objD < cobjD & obj['distance'] > cobj['distance']:
+                        cobj.setFusion(False)
 
         arr = [a, fusedCount]
         return arr

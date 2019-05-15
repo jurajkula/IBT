@@ -51,7 +51,7 @@ def savePointCloudToJSON(path, detectTime, objects):
         'time': detectTime,
         'objects': objects,
     }]
-    with open(path + 'radardata.temp', 'a') as outfile:
+    with open(path + '/radardata.temp', 'a') as outfile:
         outfile.write(json.dumps(data))
         outfile.write('\n')
 
@@ -84,7 +84,8 @@ class RadarHandler (threading.Thread):
     configFile: io.TextIOWrapper
     controlPort: serial.Serial
     dataPort: serial.Serial
-    lock: threading.Lock()
+    lockRadarData: threading.Lock()
+    lockRadarTimestamp: threading.Lock()
 
     def __init__(self):
         threading.Thread.__init__(self)
@@ -121,12 +122,13 @@ class RadarHandler (threading.Thread):
 
         self.maxNumTracks = 20
         self.maxNumPoints = 250
-        self.timestamp = 0
-        self.tempFile = open('data/pointcloud.temp', 'r')
+        self.timestamp = [0]
+        self.tempFile = None
         self.state = 'run'
         self.logger = None
         self.radarData = []
-        self.lock = None
+        self.lockRadarData = None
+        self.lockRadarTimestamp = None
         self.dataRadarPath = ''
 
     def setRadarData(self, radarData):
@@ -169,7 +171,8 @@ class RadarHandler (threading.Thread):
         return self
 
     def setTempFile(self):
-        self.tempFile = open('data/pointcloud.temp', 'r')
+        self.tempFile = open(self.dataRadarPath + '/radardata.temp', 'r')
+        # print(self.dataRadarPath)
         return self
 
     def set_data_port(self, dataPort):
@@ -217,7 +220,6 @@ class RadarHandler (threading.Thread):
             if line[0] == '%':
                 continue
             line = line.strip()
-            print(line)
             line += "\n"
             done = b''
             count = 1
@@ -260,19 +262,20 @@ class RadarHandler (threading.Thread):
         return offset
 
     def run(self):
-        if self.state == 'load3':
+        if self.state == 'load':
             while self.tempFile.readable():
                 data = loadPointCloudFromJSON(self.tempFile)
                 if data is None:
                     exit()
                 # print(data['time'])
+                self.timestamp[0] = data['time']
                 pyplot.clf()
                 pyplot.axis([-6, 6, 0, 10])
                 self.radarData.clear()
                 for obj in data['objects']:
                     # print(obj)
-                    obj['x'] = 5 - obj['x'] - 5
-                    obj['distance'] += 12
+                    # obj['x'] = 5 - obj['x'] - 5
+                    # obj['distance'] += 12
                     pyplot.scatter(obj['x'], obj['distance'], color='C0', facecolors='none', s=100)
                     self.radarData.append(obj)
 
@@ -281,27 +284,31 @@ class RadarHandler (threading.Thread):
 
             exit()
 
+        periodOfReset = 0
         while self.state != 'cancel':
             while self.lostSync == 0:
                 if self.state == 'cancel':
                     break
 
-                if self.state == 'load':
-                    data = loadPointCloudFromJSON(self.tempFile)
+                if periodOfReset % 25 == 0:
+                    self.dataPort.flush()
+                periodOfReset += 1
 
-                print(self.timestamp)
+                # print('RADAR')
+                # print(self.timestamp[0])
                 if self.gotHeader == 0:
-                    if self.state == 'load':
-                        self.rxHeader = np.array(data['header'], np.uint8)
-                        self.timestamp = data['time']
-
-                    elif self.state == 'load2':
+                    if self.state == 'load2':
                         self.rxHeader = np.fromfile(self.dataFile, np.uint8, self.frameHeaderLengthInBytes)
-                        self.timestamp = int(time.time())
+                        self.timestamp[0] = time.time() * 1000
 
                     else:
                         self.rxHeader = self.getData(np.uint8, self.frameHeaderLengthInBytes)
-                        self.timestamp = time.time() * 1000
+
+                        self.lockRadarTimestamp.acquire()
+                        try:
+                            self.timestamp[0] = time.time() * 1000
+                        finally:
+                            self.lockRadarTimestamp.release()
 
                     self.byteCount = self.rxHeader.size * self.rxHeader.itemsize
 
@@ -323,7 +330,7 @@ class RadarHandler (threading.Thread):
                 self.offset = self.initFrameHeaderStruct()
 
                 if self.gotHeader == 1:
-                    print(frameHeaderStructType['frameNumber'].astype(np.uint8).view(np.uint32))
+                    # print(frameHeaderStructType['frameNumber'].astype(np.uint8).view(np.uint32))
                     if frameHeaderStructType['frameNumber'].astype(np.uint8).view(np.uint32) > self.targetFrameNum:
                         self.targetFrameNum = frameHeaderStructType['frameNumber'].astype(np.uint8).view(np.uint32)
                         self.gotHeader = 0
@@ -347,9 +354,7 @@ class RadarHandler (threading.Thread):
                 G = []
 
                 if dataLength > 0:
-                    if self.state == 'load':
-                        self.rxData = np.array(data['pointcloud'], np.uint8)
-                    elif self.state == 'load2':
+                    if self.state == 'load2':
                         self.rxData = np.fromfile(self.dataFile, np.uint8, dataLength)
                     else:
                         self.rxData = self.getData(np.uint8, dataLength)
@@ -450,40 +455,46 @@ class RadarHandler (threading.Thread):
                     self.mIndex += 1
 
                 colorIndex = 0
-                self.radarData.clear()
 
-                objectsList = []
+                self.lockRadarData.acquire()
+                try:
+                    self.radarData.clear()
 
-                for n in range(tNumC):
-                    tid = TID[n] + 1
-                    colors = cm.rainbow(np.linspace(0, 1, tNumC))
-                    if tid > self.maxNumTracks:
-                        self.lostSync = 1
-                        break
+                    objectsList = []
 
-                    pyplot.scatter(S[0, n], S[1, n], color=colors[colorIndex], facecolors='none', s=100)
+                    for n in range(tNumC):
+                        tid = TID[n] + 1
+                        colors = cm.rainbow(np.linspace(0, 1, tNumC))
+                        if tid > self.maxNumTracks:
+                            self.lostSync = 1
+                            break
 
-                    vel = math.sqrt(math.pow(S[2, n], 2) + math.pow(S[3, n], 2))
+                        pyplot.scatter(S[0, n], S[1, n], color=colors[colorIndex], facecolors='none', s=100)
 
-                    rObject = {
-                        'distance': S[1, n],
-                        'x': S[0, n],
-                        'velocity': vel
-                    }
-                    print(rObject)
-                    self.radarData.append(rObject)
-                    objectsList.append(rObject)
+                        vel = math.sqrt(math.pow(S[2, n], 2) + math.pow(S[3, n], 2))
 
-                    colorIndex += 1
+                        rObject = {
+                            'distance': S[1, n],
+                            'x': S[0, n],
+                            'velocity': vel
+                        }
+                        # print(rObject)
+                        self.radarData.append(rObject)
+                        objectsList.append(rObject)
 
-                if self.state == 'load2':
-                    savePointCloudToJSON(self.dataRadarPath, self.timestamp, objectsList)
+                        colorIndex += 1
+                finally:
+                    self.lockRadarData.release()
+
+                if self.state == 'save':
+                    savePointCloudToJSON(self.dataRadarPath, self.timestamp[0], objectsList)
 
                 if self.posAll:
                     self.point3D = np.array((self.posAll[0], self.posAll[1], self.pointCloud[2, :]))
 
                 pyplot.pause(0.05)
                 pyplot.draw()
+                time.sleep(0.01)
 
             while self.lostSync:
                 n = 0
@@ -516,5 +527,8 @@ class RadarHandler (threading.Thread):
 
                     self.byteCount = self.byteCount + 8
                     self.gotHeader = 1
-                    # self.timestamp = time.time() * 1000
-                    self.timestamp = int(time.time())
+                    self.lockRadarTimestamp.acquire()
+                    try:
+                        self.timestamp[0] = time.time() * 1000
+                    finally:
+                        self.lockRadarTimestamp.release()

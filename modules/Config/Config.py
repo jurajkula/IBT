@@ -15,6 +15,7 @@ class Config:
         self.debug = data['debug']
         self.mode = data['mode']
         self.imageSize = 600
+        self.loadId = data['id']
 
     def loadDataFromRadarConfig(self):
         for line in self.configRadar:
@@ -24,8 +25,9 @@ class Config:
             data = line.split()
             self.shift = float(data[1]) * (-1)
             self.radarX = abs(float(data[2])) + abs(float(data[1]))
-            print(self.shift)
-            print(self.radarX)
+            # print(self.shift)
+            # print(self.radarX)
+        self.loadConfigFiles()
 
     def loadDataFromGlobalConfig(self):
         for line in self.configGlobal:

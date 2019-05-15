@@ -17,57 +17,172 @@ from modules.Radar.RadarHandler import RadarHandler
 
 class Manager:
     def __init__(self, config: Config):
-        self.state = config.mode
         self.radarHandler, self.cameraHandler = self.createHandlers()
         self.logger = Logger(config.debug)
         self.radarData = []
         self.config = config
-        self.lock = Lock()
+        self.lockRadarData = Lock()
+        self.lockRadarTimestamp = Lock()
         self.temp = None
+        self.state = self.setState()
+        self.radarTimestamp = [0]
 
     @staticmethod
     def createHandlers():
         return RadarHandler(), CameraHandler()
 
-    def setState(self, state):
-        self.state = state
+    def setState(self):
+        self.state = self.config.mode
+
+        path = './data/records/record-'
+        if self.state == 'save':
+            ids = 0
+            while isdir(path + str(ids)):
+                ids += 1
+            self.temp = path + str(ids)
+            mkdir(self.temp)
+            mkdir(self.temp + '/radar')
+            mkdir(self.temp + '/camera')
+
+        if self.state == 'load':
+            if isdir(path + str(self.config.loadId)):
+                self.temp = path + str(self.config.loadId)
+            else:
+                exit(-10)
+
+        return self.state
 
     def configureRadar(self):
-        # if self.state != 'load3':
-        # self.radarHandler.set_ports('/dev/ttyACM1', '/dev/ttyACM0') \
-        #     .set_config_file(self.config.configRadar) \
-        # .send_config()
-        self.radarHandler.setState(self.state)
         self.radarHandler.setLogger(self.logger)
-        self.radarHandler.setRadarData(self.radarData)
-        self.radarHandler.lock = self.lock
+        if self.state != 'load':
+            self.radarHandler.set_ports('/dev/ttyACM1', '/dev/ttyACM0') \
+                .set_config_file(self.config.configRadar) \
+                .send_config()
+        # if self.state == 'load':
         self.radarHandler.dataRadarPath = self.temp + '/radar'
+        self.radarHandler.setState(self.state)
+
+        self.radarHandler.setRadarData(self.radarData)
+        self.radarHandler.lockRadarData = self.lockRadarData
+        self.radarHandler.lockRadarTimestamp = self.lockRadarTimestamp
+        self.radarHandler.timestamp = self.radarTimestamp
 
     def configureCamera(self):
         self.cameraHandler.setState(self.state)
         self.cameraHandler.setLogger(self.logger)
 
+    def fpsFromCamera(self):
+        frames = 120
+        i = 0
+        start = time.time()
+        while i < 120:
+            ret, frame = self.cameraHandler.captureFrame()
+            i += 1
+
+        seconds = time.time() - start
+        return frames / seconds
+
     def runner(self):
-        if self.state == 'save':
-            ids = 0
-            while isdir('./data/records/record-' + str(ids)):
-                ids += 1
-            self.temp = './data/records/record-' + str(ids)
-            mkdir(self.temp)
-            mkdir(self.temp + '/radar')
-            mkdir(self.temp + '/camera')
-            exit()
         fusion = Fusion.Fusion(self.config)
+
+        if self.state != 'load':
+            fps = int(self.fpsFromCamera() + 0.5)
         self.radarHandler.start()
 
-        c = 0
+        if self.state == 'save':
+            c = 0
+
+            while self.cameraHandler.cap.isOpened():
+                ret, frame = self.cameraHandler.captureFrame()
+
+                if ret:
+                    if c % fps == 0:
+                        timestamp = int(time.time())
+
+                        filename = self.temp + '/camera/img-' + str(timestamp) + '.png'
+                        cv2.imwrite(filename, frame)
+                        c = 0
+
+                    cv2.imshow('frame', frame)
+                    c += 1
+                    if cv2.waitKey(1) & 0xFF == ord('q'):
+                        break
+                else:
+                    break
+            exit(0)
+
         oldFusion = None
 
+        if self.state == 'load':
+            for file in sorted(os.listdir(self.temp + '/camera/')):
+                # print(file)
+                fusedCount = 0
+                pick = [0]
+                img = cv2.imread(self.temp + '/camera/' + file)
+                frame = imutils.resize(img, width=min(self.config.imageSize, img.shape[1]))
+
+                timestamp = int(file.split('-')[1].split('.')[0]) * 1000
+
+                while True:
+                    self.lockRadarTimestamp.acquire()
+                    try:
+                        timestampRadar = self.radarTimestamp[0]
+                    finally:
+                        self.lockRadarTimestamp.release()
+
+                    if (timestampRadar - 50 < timestamp) & (timestamp < timestampRadar + 50):
+                        pick = Detect.detectPedestrian(frame, self.config.winStride, self.config.scale)
+
+                        self.lockRadarData.acquire()
+                        try:
+                            fused = fusion.fuse(pick,
+                                                [frame.shape[0], frame.shape[1]],
+                                                self.radarData)
+                        finally:
+                            self.lockRadarData.release()
+
+                        if fused is not None:
+                            oldFusion = fused[0]
+                            fusedCount = fused[1]
+                        break
+
+                    if timestampRadar + 50 > timestamp:
+                        break
+                    time.sleep(0.1)
+
+                self.lockRadarData.acquire()
+                try:
+                    self.cameraHandler.insertCountDataToImage(frame, [fusedCount, len(pick), len(self.radarData)])
+                finally:
+                    self.lockRadarData.release()
+
+                if oldFusion is None:
+                    cv2.imshow('Frame', frame)
+                    if cv2.waitKey(25) == ord('q'):
+                        self.radarHandler.setState('cancel')
+                        break
+                    continue
+
+                for o in oldFusion:
+                    for oo in o:
+                        if oo.detected is not True:
+                            continue
+                        self.cameraHandler.insertDataToImage(frame, oo)
+
+                cv2.imshow('Frame', frame)
+                # print(time.time() * 1000 - tms)
+                if cv2.waitKey(25) == ord('q'):
+                    self.radarHandler.setState('cancel')
+                    break
+            exit(0)
+
+        c = 0
+
         location = './data/UnicamSaver/20190510/04'
-        sleeeep = 1
+        sleeeep = 1.8
         for file in sorted(os.listdir(location)):
 
-            print(file)
+            # print(file)
             img = cv2.imread(location + '/' + file)
             # tms = time.time() * 1000
             # img = cv2.imread('./data/me1.png')
@@ -85,7 +200,6 @@ class Manager:
                 cv2.imshow('Frame', frame)
                 # print(time.time() * 1000 - tms)
                 cv2.waitKey(25)
-                time.sleep(sleeeep)
                 # exit()
                 continue
 
@@ -102,6 +216,7 @@ class Manager:
             time.sleep(sleeeep)
 
         # while self.cameraHandler.cap.isOpened():
+        #     time.sleep(0.001)
         #     fusedCount = 0
         #     pick = [0]
         #
@@ -113,20 +228,37 @@ class Manager:
         #         # if (c % self.config.oldDetection == 0) & (self.config.oldDetection > 0):
         #         #     oldFusion = None
         #
-        #         if c % 3 == 0:
-        #             pick = Detect.detectPedestrian(frame, self.config.winStride, self.config.scale)
+        #         if c % int(fps / 4) == 0:
+        #             timestamp = time.time() * 1000
+        #             self.lockRadarTimestamp.acquire()
+        #             try:
+        #                 timestampRadar = self.radarTimestamp[0]
+        #             finally:
+        #                 self.lockRadarTimestamp.release()
+        #
+        #             if timestampRadar - 50 < timestamp < timestampRadar + 50:
+        #
+        #                 pick = Detect.detectPedestrian(frame, self.config.winStride, self.config.scale)
+        #
+        #                 self.lockRadarData.acquire()
+        #                 try:
+        #                     fused = fusion.fuse(pick,
+        #                                         [self.cameraHandler.cap.get(3), self.cameraHandler.cap.get(4)],
+        #                                         self.radarData)
+        #                 finally:
+        #                     self.lockRadarData.release()
+        #
+        #                 if fused is not None:
+        #                     oldFusion = fused[0]
+        #                     fusedCount = fused[1]
         #             c = 0
-        #             print(pick)
         #
-        #             fused = fusion.fuse(pick,
-        #                                 [self.cameraHandler.cap.get(3), self.cameraHandler.cap.get(4)],
-        #                                 self.radarData)
+        #         self.lockRadarData.acquire()
+        #         try:
+        #             self.cameraHandler.insertCountDataToImage(frame, [fusedCount, len(pick), len(self.radarData)])
+        #         finally:
+        #             self.lockRadarData.release()
         #
-        #             if fused is not None:
-        #                 oldFusion = fused[0]
-        #                 fusedCount = fused[1]
-        #
-        #         self.cameraHandler.insertCountDataToImage(frame, [fusedCount, len(pick), len(self.radarData)])
         #         if oldFusion is None:
         #             cv2.imshow('Frame', frame)
         #             if cv2.waitKey(25) == ord('q'):
