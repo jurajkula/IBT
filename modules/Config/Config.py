@@ -25,8 +25,6 @@ class Config:
             data = line.split()
             self.shift = float(data[1]) * (-1)
             self.radarX = abs(float(data[2])) + abs(float(data[1]))
-            # print(self.shift)
-            # print(self.radarX)
         self.loadConfigFiles()
 
     def loadDataFromGlobalConfig(self):

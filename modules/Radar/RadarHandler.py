@@ -264,25 +264,19 @@ class RadarHandler (threading.Thread):
     def run(self):
         if self.state == 'load':
             while self.tempFile.readable():
+                if self.state == 'cancel':
+                    break
+
                 data = loadPointCloudFromJSON(self.tempFile)
                 if data is None:
-                    exit()
-                # print(data['time'])
+                    exit(0)
                 self.timestamp[0] = data['time']
-                pyplot.clf()
-                pyplot.axis([-6, 6, 0, 10])
                 self.radarData.clear()
                 for obj in data['objects']:
-                    # print(obj)
-                    # obj['x'] = 5 - obj['x'] - 5
-                    # obj['distance'] += 12
-                    pyplot.scatter(obj['x'], obj['distance'], color='C0', facecolors='none', s=100)
                     self.radarData.append(obj)
 
-                pyplot.pause(0.05)
-                pyplot.draw()
-
-            exit()
+                time.sleep(0.05)
+            exit(0)
 
         periodOfReset = 0
         while self.state != 'cancel':
@@ -294,8 +288,6 @@ class RadarHandler (threading.Thread):
                     self.dataPort.flush()
                 periodOfReset += 1
 
-                # print('RADAR')
-                # print(self.timestamp[0])
                 if self.gotHeader == 0:
                     if self.state == 'load2':
                         self.rxHeader = np.fromfile(self.dataFile, np.uint8, self.frameHeaderLengthInBytes)
@@ -330,7 +322,6 @@ class RadarHandler (threading.Thread):
                 self.offset = self.initFrameHeaderStruct()
 
                 if self.gotHeader == 1:
-                    # print(frameHeaderStructType['frameNumber'].astype(np.uint8).view(np.uint32))
                     if frameHeaderStructType['frameNumber'].astype(np.uint8).view(np.uint32) > self.targetFrameNum:
                         self.targetFrameNum = frameHeaderStructType['frameNumber'].astype(np.uint8).view(np.uint32)
                         self.gotHeader = 0
@@ -429,9 +420,6 @@ class RadarHandler (threading.Thread):
                     EC = []
                     G = []
 
-                pyplot.clf()
-                pyplot.axis([-5, 5, -1, 10])
-
                 if self.trackerRun == 'Target':
                     if self.numTargets == 0:
                         TID = np.zeros((1, 1))
@@ -454,8 +442,6 @@ class RadarHandler (threading.Thread):
                 if self.mIndex.shape[0]:
                     self.mIndex += 1
 
-                colorIndex = 0
-
                 self.lockRadarData.acquire()
                 try:
                     self.radarData.clear()
@@ -464,12 +450,9 @@ class RadarHandler (threading.Thread):
 
                     for n in range(tNumC):
                         tid = TID[n] + 1
-                        colors = cm.rainbow(np.linspace(0, 1, tNumC))
                         if tid > self.maxNumTracks:
                             self.lostSync = 1
                             break
-
-                        pyplot.scatter(S[0, n], S[1, n], color=colors[colorIndex], facecolors='none', s=100)
 
                         vel = math.sqrt(math.pow(S[2, n], 2) + math.pow(S[3, n], 2))
 
@@ -478,11 +461,9 @@ class RadarHandler (threading.Thread):
                             'x': S[0, n],
                             'velocity': vel
                         }
-                        # print(rObject)
                         self.radarData.append(rObject)
                         objectsList.append(rObject)
 
-                        colorIndex += 1
                 finally:
                     self.lockRadarData.release()
 
@@ -492,9 +473,7 @@ class RadarHandler (threading.Thread):
                 if self.posAll:
                     self.point3D = np.array((self.posAll[0], self.posAll[1], self.pointCloud[2, :]))
 
-                pyplot.pause(0.05)
-                pyplot.draw()
-                time.sleep(0.01)
+                time.sleep(0.06)
 
             while self.lostSync:
                 n = 0
