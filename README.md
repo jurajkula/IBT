@@ -8,7 +8,7 @@ And of course this app itself is open source with a [public repository](https://
 
 ### Installation
 
-This system requires [OpenCV](https://opencv.org/) v3.4.3 to run.
+This system requires [OpenCV](https://opencv.org/) v3.4.3 to run. This library is downloaded from install script. Library for radar (demo people counting) has to be downloaded from [official web](https://training.ti.com/people-counting-demonstration-using-ti-mmwave-sensors)
 
 Install the dependencies and devDependencies and start the server.
 
