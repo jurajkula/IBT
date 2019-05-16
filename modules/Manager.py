@@ -165,7 +165,7 @@ class Manager:
 
                 for o in oldFusion:
                     for oo in o:
-                        if oo.detected is not True:
+                        if oo.fused is not True:
                             continue
                         self.cameraHandler.insertDataToImage(frame, oo)
 
@@ -240,7 +240,7 @@ class Manager:
 
                 for o in oldFusion:
                     for oo in o:
-                        if oo.detected is not True:
+                        if oo.fused is not True:
                             continue
                         self.cameraHandler.insertDataToImage(frame, oo)
 

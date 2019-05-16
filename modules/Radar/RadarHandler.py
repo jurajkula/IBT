@@ -270,7 +270,7 @@ class RadarHandler (threading.Thread):
                 for obj in data['objects']:
                     self.radarData.append(obj)
 
-                time.sleep(0.05)
+                time.sleep(0.09)
             exit(0)
 
         periodOfReset = 0
