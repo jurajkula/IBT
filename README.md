@@ -15,6 +15,12 @@ Install the dependencies and devDependencies and start the server.
 ```sh
 $ cd IBT
 $ sh install.sh
+$ cd libraries
+$ mkdir build
+$ cmake . ../CMakeList.txt
+$ make
+$ make install
+$ make clear
 ```
 ### Configuration
 config files:
@@ -34,15 +40,15 @@ Global config:
 $ python3 main.py
 ```
 **Params:**
-[-h/--help] - print help message
-[-d/--debug] - enable log mesages
-[-m/--mode] - specifies mode
-[-i/--id] - specifies ID of data folder (path: data/records/record-ID)
+* [-h/--help] - print help message
+* [-d/--debug] - enable log mesages
+* [-m/--mode] - specifies mode
+* [-i/--id] - specifies ID of data folder (path: data/records/record-ID)
 
 **Supported modes:**
-'run' - start default program
-'save' - start program and enable saving data
-'load' - load data from inserted ID (argument -i/--id)
+* 'run' - start default program
+* 'save' - start program and enable saving data
+* 'load' - load data from inserted ID (argument -i/--id)
 
 
 License
