@@ -86,6 +86,7 @@ class Manager:
         fusion = Fusion.Fusion(self.config)
 
         if self.state != 'load':
+            self.logger.log('Find out camera fps')
             fps = int(self.fpsFromCamera() + 0.5)
         self.radarHandler.start()
 
