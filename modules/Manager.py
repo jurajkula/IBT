@@ -66,6 +66,7 @@ class Manager:
         self.radarHandler.lockRadarData = self.lockRadarData
         self.radarHandler.lockRadarTimestamp = self.lockRadarTimestamp
         self.radarHandler.timestamp = self.radarTimestamp
+        self.radarHandler.cameraPos = self.config.CameraPosition
 
     def configureCamera(self):
         self.cameraHandler.setState(self.state)

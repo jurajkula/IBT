@@ -16,6 +16,7 @@ class Config:
         self.mode = data['mode']
         self.imageSize = 600
         self.loadId = data['id']
+        self.CameraPosition = [0, 0]
 
     def loadDataFromRadarConfig(self):
         for line in self.configRadar:
@@ -46,6 +47,9 @@ class Config:
 
             if line.find('OldDetection') != -1:
                 self.oldDetection = int(line.split(':')[1].strip())
+
+            if line.find('CameraPosition') != -1:
+                self.CameraPosition = line.split(':')[1].strip().split()
 
     def loadConfigFiles(self):
         try:

@@ -129,6 +129,7 @@ class RadarHandler (threading.Thread):
         self.lockRadarData = None
         self.lockRadarTimestamp = None
         self.dataRadarPath = ''
+        self.cameraPos = [0, 0]
 
     def setRadarData(self, radarData):
         self.radarData = radarData
@@ -444,8 +445,8 @@ class RadarHandler (threading.Thread):
                         vel = math.sqrt(math.pow(S[2, n], 2) + math.pow(S[3, n], 2))
 
                         rObject = {
-                            'distance': S[1, n],
-                            'x': S[0, n],
+                            'distance': S[1, n] + float(self.cameraPos[1]),
+                            'x': S[0, n] + float(self.cameraPos[0]),
                             'velocity': vel
                         }
                         self.radarData.append(rObject)
