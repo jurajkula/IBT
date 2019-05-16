@@ -17,7 +17,9 @@ $ cd IBT
 $ sh install.sh
 $ cd libraries
 $ mkdir build
-$ cmake . ../CMakeList.txt
+$ cd build/
+$ rm ../CMakeCache.txt
+$ cmake ..
 $ make
 $ make install
 $ make clear
