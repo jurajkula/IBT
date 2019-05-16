@@ -35,7 +35,7 @@ Global config:
 * WinStride - step size of sliding window for detection method
 * Scale - number of layouts
 * ImageSice - size of image
-* 
+* CameraPosition - position of camera against radar, 1. param is left/right (left < 0, right > 0) and 2. param is front/behind (behind < 0, front > 0)
 
 ### Start
 ```sh
